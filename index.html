@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Holo Bricks</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="stage"></div>
+
+    <aside id="tray">
+      <h2>Brick</h2>
+      <div class="row">
+        <button type="button" class="big" data-action="type" data-value="2x2">2×2</button>
+        <button type="button" class="big" data-action="type" data-value="2x4">2×4</button>
+      </div>
+      <h2>Color</h2>
+      <div class="row wrap" id="swatches"></div>
+      <h2>Edit</h2>
+      <button type="button" class="big wide" data-action="rotate">⟳ Rotate brick</button>
+      <h2>View</h2>
+      <div class="row">
+        <button type="button" class="big" data-action="view" data-value="-45" aria-label="Turn view left">↺ Turn</button>
+        <button type="button" class="big" data-action="view" data-value="45" aria-label="Turn view right">Turn ↻</button>
+      </div>
+      <div class="row">
+        <button type="button" class="big" data-action="undo">↶ Undo</button>
+        <button type="button" class="big" data-action="redo">↷ Redo</button>
+      </div>
+      <button type="button" class="big wide" data-action="empty">✋ Empty hand</button>
+    </aside>
+
+    <div id="hud">
+      <div id="hud-source"></div>
+      <div id="hud-held"></div>
+      <div id="hud-message"></div>
+    </div>
+
+    <div id="hand-panel">
+      <canvas id="hand-debug" width="240" height="180"></canvas>
+      <div class="row">
+        <button type="button" id="hand-start" style="flex: 1">Start hand tracking</button>
+        <button type="button" id="hand-swap" title="Swap which hand builds">⇄ Swap</button>
+      </div>
+      <div id="hand-status"></div>
+      <ul id="legend">
+        <li><b>Right pinch</b> pick from tray / place</li>
+        <li><b>Right middle-finger pinch</b> rotate brick</li>
+        <li><b>Right fist (hold)</b> cancel, empty hand</li>
+        <li><b>Left pinch + drag</b> turn / tilt; push or pull to zoom</li>
+        <li><b>Left middle-finger pinch</b> undo · <b>left fist</b> reset view</li>
+      </ul>
+    </div>
+
+    <div id="cursor"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
