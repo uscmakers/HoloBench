@@ -1,0 +1,5 @@
+node_modules/
+dist/
+# Copied from node_modules by `npm install` (postinstall)
+public/mediapipe/
+.DS_Store
