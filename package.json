@@ -8,7 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "postinstall": "mkdir -p public/mediapipe && cp node_modules/@mediapipe/tasks-vision/wasm/* public/mediapipe/"
+    "postinstall": "node scripts/copy-mediapipe-wasm.cjs"
   },
   "devDependencies": {
     "@types/three": "^0.169.0",
