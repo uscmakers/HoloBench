@@ -27,8 +27,13 @@ export class Interaction {
   messageKind: 'info' | 'error' = 'error';
   private messageUntil = 0;
   private hoverEl: Element | null = null;
-  /** Handles tray actions the editor itself doesn't know (e.g. LDraw set steps). */
-  extraAction: (action: string, value?: string) => void = () => {};
+  /** Handles tray actions the editor doesn't know (e.g. LDraw set steps). Returns true if it handled one. */
+  extraAction: (action: string, value?: string) => boolean = () => false;
+  /**
+   * Gets first say over the build area (e.g. placing LDraw set pieces). Returns true to take over
+   * from free-brick placing. Called with a null cursor when the cursor is over the tray or gone.
+   */
+  buildAreaOverride: (cursor: { x: number; y: number } | null, pressStarted: boolean) => boolean = () => false;
 
   constructor(
     private model: BuildModel,
@@ -43,12 +48,17 @@ export class Interaction {
     this.setHover(button);
 
     if (button) {
+      this.buildAreaOverride(null, false);
       this.view.setGhost(null, this.color, false);
       if (pressStarted) this.runAction(button.dataset.action!, button.dataset.value);
       return;
     }
 
     const onBuild = !!cursor && el === this.view.renderer.domElement;
+    if (this.buildAreaOverride(onBuild ? cursor : null, onBuild && pressStarted)) {
+      this.view.setGhost(null, this.color, false);
+      return;
+    }
     const hit = onBuild && this.held ? this.view.pick(cursor!) : null;
     if (!this.held || !hit) {
       this.view.setGhost(null, this.color, false);
@@ -84,7 +94,7 @@ export class Interaction {
         this.view.turnView(Number(value));
         break;
       case 'undo':
-        this.model.undo();
+        if (!this.extraAction('undo')) this.model.undo();
         break;
       case 'redo':
         this.model.redo();
@@ -115,6 +125,11 @@ export class Interaction {
     this.hoverEl?.classList.remove('hover');
     el?.classList.add('hover');
     this.hoverEl = el;
+  }
+
+  /** Error-style feedback (something didn't work). */
+  warn(text: string) {
+    this.flash(text, performance.now());
   }
 
   /** Neutral feedback, e.g. confirming a gesture was recognised. */

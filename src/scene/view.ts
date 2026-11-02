@@ -76,6 +76,12 @@ export class BuildView {
     return { gx: p.x + this.model.width / 2, gz: p.z + this.model.depth / 2 };
   }
 
+  /** World-space ray through a viewport position (0..1). */
+  rayAt(cursor: { x: number; y: number }): THREE.Ray {
+    this.raycaster.setFromCamera(new THREE.Vector2(cursor.x * 2 - 1, -(cursor.y * 2 - 1)), this.camera);
+    return this.raycaster.ray.clone();
+  }
+
   /** Brick id under a viewport position, if any. */
   brickAt(cursor: { x: number; y: number }): string | null {
     this.raycaster.setFromCamera(new THREE.Vector2(cursor.x * 2 - 1, -(cursor.y * 2 - 1)), this.camera);
@@ -132,6 +138,13 @@ export class BuildView {
     (this.scene.fog as THREE.Fog).color.set(bg);
     this.hemi.intensity = on ? 2 : 1.1;
     this.sun.intensity = on ? 3 : 2.2;
+  }
+
+  /** Points the camera at `target` from `distance` away, keeping the current viewing direction. */
+  focus(target: THREE.Vector3, distance: number) {
+    const dir = this.camera.position.clone().sub(this.controls.target).normalize();
+    this.controls.target.copy(target);
+    this.camera.position.copy(target).addScaledVector(dir, distance);
   }
 
   resetView() {

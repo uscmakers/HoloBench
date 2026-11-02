@@ -31,8 +31,12 @@
       <button type="button" class="big wide" data-action="empty">✋ Empty hand</button>
       <h2>LEGO set</h2>
       <div class="row">
-        <button type="button" class="big" data-action="step" data-value="-1" aria-label="Previous build step">◀ Step</button>
-        <button type="button" class="big" data-action="step" data-value="1" aria-label="Next build step">Step ▶</button>
+        <button type="button" class="big" data-action="setmode" data-value="build">Build it</button>
+        <button type="button" class="big" data-action="setmode" data-value="built">Show built</button>
+      </div>
+      <div class="row">
+        <button type="button" class="big" data-action="step" data-value="-1" aria-label="Back one piece or step">◀ Back</button>
+        <button type="button" class="big" data-action="step" data-value="1" aria-label="Next piece or step">Next ▶</button>
       </div>
       <button type="button" class="big wide" data-action="set">Next set</button>
     </aside>
@@ -54,11 +58,12 @@
       <button type="button" id="projector-toggle">Projector mode (P)</button>
       <div id="hand-status"></div>
       <ul id="legend">
+        <li><b>Build it</b> carry the piece to its glowing spot, pinch to place</li>
         <li><b>Right pinch</b> pick from tray / place</li>
         <li><b>Right fist (hold)</b> cancel, empty hand</li>
         <li><b>Left pinch + drag</b> turn / tilt; push or pull to zoom</li>
         <li><b>Left fist (hold)</b> undo</li>
-        <li><b>Keys</b> ←/→ set steps · N next set · P projector · 0 reset view</li>
+        <li><b>Keys</b> ←/→ back/next · B build / show built · N next set · P projector · 9 frame set · 0 whole board</li>
       </ul>
     </div>
 

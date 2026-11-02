@@ -33,6 +33,7 @@ async function showSet(i: number) {
   setIndex = (i + SETS.length) % SETS.length;
   try {
     await setView.load(SETS[setIndex]);
+    frameSet();
   } catch (e) {
     interaction.notify(`Couldn't load ${SETS[setIndex].name}`);
     console.error(e);
@@ -41,9 +42,43 @@ async function showSet(i: number) {
 void showSet(0);
 
 interaction.extraAction = (action, value) => {
-  if (action === 'step') setView.setStep(setView.step + Number(value));
+  const building = setView.mode === 'build';
+  if (action === 'step' && building) {
+    // Build mode: back = take the last piece back, next = place this piece for me.
+    if (Number(value) < 0) setView.undoPiece();
+    else setView.placeNext();
+  } else if (action === 'step') setView.setStep(setView.step + Number(value));
   else if (action === 'set') void showSet(setIndex + 1);
+  else if (action === 'setmode') setView.setMode(value === 'built' ? 'built' : 'build');
+  else if (action === 'undo' && building) return setView.undoPiece() || true;
+  else return false;
+  syncSetButtons();
+  return true;
 };
+
+// Build mode: the hand (or mouse) carries the next piece of the set over the build area.
+interaction.buildAreaOverride = (cursor, pressStarted) => {
+  if (setView.mode !== 'build' || setView.complete) return false;
+  const result = setView.updateHeld(cursor ? view.rayAt(cursor) : null, pressStarted);
+  if (result === 'miss') interaction.warn('Move the piece onto its glowing spot');
+  if (result === 'placed' && setView.complete) interaction.notify(`${setView.info?.name} complete`);
+  return true;
+};
+
+/** Frames the set closely enough that single pieces are easy to see and carry. */
+function frameSet() {
+  const box = setView.bounds();
+  if (box.isEmpty()) return;
+  const size = box.getSize(new THREE.Vector3());
+  view.focus(box.getCenter(new THREE.Vector3()).setY(size.y / 3), Math.max(size.x, size.z, size.y) * 1.6 + 8);
+}
+
+function syncSetButtons() {
+  for (const el of document.querySelectorAll<HTMLElement>('[data-action="setmode"]')) {
+    el.classList.toggle('selected', el.dataset.value === setView.mode);
+  }
+}
+syncSetButtons();
 
 function setProjectorMode(on: boolean) {
   document.body.classList.toggle('projector', on);
@@ -84,8 +119,10 @@ window.addEventListener('keydown', (e) => {
   else if (e.key === 'ArrowRight') interaction.runAction('step', '1');
   else if (e.key === 'ArrowLeft') interaction.runAction('step', '-1');
   else if (e.key === 'n' || e.key === 'N') interaction.runAction('set');
+  else if (e.key === 'b' || e.key === 'B') interaction.runAction('setmode', setView.mode === 'build' ? 'built' : 'build');
   else if (e.key === 'p' || e.key === 'P') setProjectorMode(!document.body.classList.contains('projector'));
   else if (e.key === '0') view.resetView();
+  else if (e.key === '9') frameSet();
   else if (e.key === '1') interaction.runAction('type', '2x2');
   else if (e.key === '2') interaction.runAction('type', '2x4');
 });
@@ -146,7 +183,7 @@ function frame(now: number) {
       interaction.notify('✊ Cancelled: hand is empty');
     } else if (ev === 'undo') {
       interaction.runAction('undo');
-      interaction.notify('↶ Undo');
+      interaction.notify(setView.mode === 'build' ? '↶ Took back the last piece' : '↶ Undo');
     }
   }
 
@@ -161,11 +198,21 @@ function frame(now: number) {
   }
 
   $('hud-source').textContent = `Input: ${active === hand ? 'Hand' : 'Mouse'}`;
-  $('hud-set').textContent = setView.info
-    ? `${setView.info.name} (${setView.info.id}) · step ${setView.step + 1} of ${setView.numSteps}`
-    : 'Loading set…';
+  const s = setView.info;
+  $('hud-set').textContent = !s
+    ? 'Loading set…'
+    : setView.mode === 'built'
+      ? `${s.name} (${s.id}) · step ${setView.step + 1} of ${setView.numSteps}`
+      : setView.complete
+        ? `${s.name} (${s.id}) · complete`
+        : `${s.name} (${s.id}) · piece ${setView.placed + 1} of ${setView.total} · step ${setView.step + 1} of ${setView.numSteps}`;
   const held = interaction.held;
-  $('hud-held').textContent = held ? `Holding ${held.type} at ${held.rot}°` : 'Holding nothing';
+  $('hud-held').textContent =
+    setView.mode === 'build' && !setView.complete
+      ? 'Holding the next piece'
+      : held
+        ? `Holding ${held.type} at ${held.rot}°`
+        : 'Holding nothing';
   $('hud-message').textContent = interaction.message;
   $('hud-message').className = interaction.messageKind;
   const buildSide = hand.swapHands ? 'Left' : 'Right';
