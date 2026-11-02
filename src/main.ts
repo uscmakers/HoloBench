@@ -22,7 +22,7 @@ const GESTURE_NAMES = {
 function describe(g: GestureDetector) {
   const m = g.metrics;
   return m
-    ? `${GESTURE_NAMES[g.gesture]} · idx ${m.index.toFixed(2)} curl ${m.curl.toFixed(2)} spread ${m.spread.toFixed(2)}`
+    ? `${GESTURE_NAMES[g.gesture]} · idx ${m.index.toFixed(2)} curl ${m.curl.toFixed(2)} spread ${m.spread.toFixed(2)} straight ${m.extended}/4`
     : 'not seen';
 }
 
@@ -175,6 +175,10 @@ function openMenu(at: { x: number; y: number } | null, by: 'hand' | 'toggle') {
   interaction.syncTray();
 }
 
+// With the hand, resting on a menu or gallery option picks it; no pinch needed.
+let handDriving = false;
+interaction.canDwell = (el) => handDriving && !!el.closest('#radial-menu, #gallery');
+
 interaction.onAction = (action) => {
   if (!menu.open) return;
   // Choosing a brick is the end of a pick; colors and actions keep the menu up for more.
@@ -312,6 +316,7 @@ function frame(now: number) {
     .sort((a, b) => b.frame().lastActive - a.frame().lastActive)[0];
   const f = active?.frame();
   let pressStarted = !!f && f.pressCount !== (seenPresses.get(active.name) ?? 0);
+  handDriving = active === hand;
   for (const s of sources) seenPresses.set(s.name, s.frame().pressCount);
 
   // Grab the world: the build turns the way the hand moves, so the camera goes the opposite way.

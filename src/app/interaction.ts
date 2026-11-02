@@ -26,7 +26,7 @@ export class Interaction {
   message = '';
   messageKind: 'info' | 'error' = 'error';
   private messageUntil = 0;
-  private hoverEl: Element | null = null;
+  private hoverEl: HTMLElement | null = null;
   /** Handles tray actions the editor doesn't know (e.g. LDraw set steps). Returns true if it handled one. */
   extraAction: (action: string, value?: string) => boolean = () => false;
   /**
@@ -38,6 +38,13 @@ export class Interaction {
   historyOverride: () => { canUndo: boolean; canRedo: boolean } | null = () => null;
   /** Called after every action, e.g. to close or refresh a menu. */
   onAction: (action: string, value?: string) => void = () => {};
+  /** Holding the cursor on a button this long picks it, where `canDwell` allows (e.g. menus, by hand). */
+  dwellMs = 700;
+  canDwell: (el: HTMLElement) => boolean = () => false;
+  // Keyed by action and value, not element, so a menu redrawn under the cursor doesn't restart or repeat a pick.
+  private dwellKey = '';
+  private dwellSince = 0;
+  private dwellDone = '';
 
   constructor(
     private model: BuildModel,
@@ -51,6 +58,7 @@ export class Interaction {
     const button = el?.closest<HTMLElement>('[data-action]') ?? null;
     this.setHover(button);
 
+    this.dwell(button, pressStarted, now);
     if (button) {
       this.buildAreaOverride(null, false);
       this.view.setGhost(null, this.color, false);
@@ -128,8 +136,27 @@ export class Interaction {
     for (const el of document.querySelectorAll<HTMLButtonElement>('[data-action="redo"]')) el.disabled = !history.canRedo;
   }
 
-  private setHover(el: Element | null) {
+  /** Fills the hovered button's --dwell (0..1) and picks it when full. A pinch counts as the pick. */
+  private dwell(el: HTMLElement | null, pressStarted: boolean, now: number) {
+    const key = el && this.canDwell(el) ? `${el.dataset.action}|${el.dataset.value ?? ''}` : '';
+    if (key !== this.dwellKey) {
+      this.dwellKey = key;
+      this.dwellSince = now;
+      this.dwellDone = '';
+    }
+    if (pressStarted) this.dwellDone = key;
+    if (!el || !key) return;
+    const progress = key === this.dwellDone ? 0 : Math.min((now - this.dwellSince) / this.dwellMs, 1);
+    el.style.setProperty('--dwell', String(progress));
+    if (progress < 1) return;
+    this.dwellDone = key;
+    el.style.setProperty('--dwell', '0');
+    this.runAction(el.dataset.action!, el.dataset.value);
+  }
+
+  private setHover(el: HTMLElement | null) {
     if (el === this.hoverEl) return;
+    this.hoverEl?.style.removeProperty('--dwell');
     this.hoverEl?.classList.remove('hover');
     el?.classList.add('hover');
     this.hoverEl = el;

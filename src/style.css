@@ -56,6 +56,9 @@ body.free-build .set-only, body.free-build #set-thumb { display: none; }
   line-height: 1; background: rgba(20,30,50,0.95); }
 .menu-item.inner { left: -29px; top: -29px; width: 58px; height: 58px; }
 .menu-item.swatch { border-color: rgba(230,242,255,0.5); }
+/* Dwell progress: the hovered option fills up, then picks itself. */
+#radial-menu .menu-item.hover { background-image: conic-gradient(rgba(79,216,255,0.6) calc(var(--dwell, 0) * 1turn), transparent 0); }
+#gallery .gallery-card.hover { background-image: linear-gradient(to right, rgba(79,216,255,0.3) calc(var(--dwell, 0) * 100%), transparent 0); }
 .menu-item.swatch.selected { box-shadow: 0 0 0 3px var(--bg) inset, 0 0 0 6px var(--accent) inset; }
 .studs { display: grid; gap: 2px; }
 .studs i { aspect-ratio: 1; border-radius: 50%; background: var(--accent); opacity: 0.85; }

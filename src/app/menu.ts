@@ -71,7 +71,7 @@ export class RadialMenu {
         b.title = item.title;
         b.setAttribute('aria-label', item.title);
         b.innerHTML = item.label;
-        if (item.swatch) b.style.background = item.swatch;
+        if (item.swatch) b.style.backgroundColor = item.swatch;
         // `translate`, not `transform`, so the hover scale still applies.
         b.style.translate = `${Math.cos(a) * r}px ${Math.sin(a) * r}px`;
         return b;
