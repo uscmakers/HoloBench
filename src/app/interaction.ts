@@ -1,4 +1,4 @@
-import { type BrickType, PALETTE, type Rotation, nextRotation } from '../model/bricks';
+import { BRICK_DEFS, type BrickType, PALETTE, type Rotation, nextRotation } from '../model/bricks';
 import type { BuildModel, Reason } from '../model/build';
 import type { BuildView } from '../scene/view';
 import { placementAt } from './target';
@@ -36,6 +36,8 @@ export class Interaction {
   buildAreaOverride: (cursor: { x: number; y: number } | null, pressStarted: boolean) => boolean = () => false;
   /** Replaces the editor's undo/redo state for the tray buttons while something else owns undo (null = editor's). */
   historyOverride: () => { canUndo: boolean; canRedo: boolean } | null = () => null;
+  /** Called after every action, e.g. to close or refresh a menu. */
+  onAction: (action: string, value?: string) => void = () => {};
 
   constructor(
     private model: BuildModel,
@@ -64,7 +66,7 @@ export class Interaction {
     const hit = onBuild && this.held ? this.view.pick(cursor!) : null;
     if (!this.held || !hit) {
       this.view.setGhost(null, this.color, false);
-      if (pressStarted && onBuild && !this.held) this.flash('Pick a brick from the tray first', now);
+      if (pressStarted && onBuild && !this.held) this.flash('Show your left palm (or press Space) to pick a brick', now);
       return;
     }
 
@@ -90,7 +92,8 @@ export class Interaction {
         if (!this.held) this.flash('Pick a brick first, then rotate it', performance.now());
         else {
           this.held = { ...this.held, rot: nextRotation(this.held.rot) };
-          if (this.held.type === '2x2') this.flash('2×2 is square, so it looks the same rotated', performance.now());
+          const { width, depth } = BRICK_DEFS[this.held.type];
+          if (width === depth) this.flash('A square brick looks the same rotated', performance.now());
         }
         break;
       case 'view':
@@ -109,6 +112,7 @@ export class Interaction {
         this.extraAction(action, value);
     }
     this.syncTray();
+    this.onAction(action, value);
   }
 
   /** Marks the selected brick type and color in the tray. */

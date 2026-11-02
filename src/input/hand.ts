@@ -24,7 +24,7 @@ const FREEZE_AFTER_RELEASE_MS = 150;
 const MOVE_EPSILON = 0.003;
 
 export type HandStatus = 'off' | 'loading' | 'running' | 'error';
-export type HandEvent = 'cancel' | 'undo';
+export type HandEvent = 'cancel' | 'undo' | 'menuOpen' | 'menuClose';
 
 /**
  * Webcam hand tracking (MediaPipe) with two roles:
@@ -38,9 +38,9 @@ export class HandInput implements InputSource {
   zone: Zone = { ...DEFAULT_ZONE };
   /** Swap which hand builds (for left-handed users, or if the camera reports hands the other way round). */
   swapHands = false;
-  /** Build hand: pinch = press, middle pinch = rotate brick, fist = cancel. */
+  /** Build hand: pinch = press, fist = cancel / redo. */
   readonly gestures = new GestureDetector();
-  /** View hand: pinch-drag = turn/tilt/zoom, middle pinch = undo, fist = reset view. */
+  /** View hand: pinch-drag = turn/tilt/zoom, fist = undo, open palm = menu. */
   readonly viewGestures = new GestureDetector();
   /** One-shot gesture actions not yet handled by the app. */
   events: HandEvent[] = [];
@@ -168,6 +168,7 @@ export class HandInput implements InputSource {
     if (!lm || !world) {
       this.viewLandmarks = null;
       this.viewRatio = null;
+      if (this.viewGestures.gesture === 'palm') this.events.push('menuClose');
       this.viewGestures.update(null);
       this.viewGrab.update(null, false);
       this.vx.reset();
@@ -177,9 +178,13 @@ export class HandInput implements InputSource {
     }
     this.viewLandmarks = lm;
     this.viewRatio = pinchRatio(world);
+    const wasPalm = this.viewGestures.gesture === 'palm';
     const started = this.viewGestures.update(world);
     // Middle-finger pinch is not used: it was unreliable on camera.
     if (started === 'fist') this.events.push('undo');
+    // Showing the open palm holds the menu open.
+    if (started === 'palm') this.events.push('menuOpen');
+    else if (started && wasPalm) this.events.push('menuClose');
     const pinched = this.viewGestures.gesture === 'pinch';
     const c = palmCenter(lm);
     const t = now / 1000;

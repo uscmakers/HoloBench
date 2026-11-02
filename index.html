@@ -9,37 +9,29 @@
   <body>
     <div id="stage"></div>
 
-    <aside id="tray">
-      <h2>Brick</h2>
-      <div class="row">
-        <button type="button" class="big" data-action="type" data-value="2x2">2×2</button>
-        <button type="button" class="big" data-action="type" data-value="2x4">2×4</button>
-      </div>
-      <h2>Color</h2>
-      <div class="row wrap" id="swatches"></div>
-      <h2>Edit</h2>
-      <button type="button" class="big wide" data-action="rotate">⟳ Rotate brick</button>
-      <h2>View</h2>
-      <div class="row">
-        <button type="button" class="big" data-action="view" data-value="-45" aria-label="Turn view left">↺ Turn</button>
-        <button type="button" class="big" data-action="view" data-value="45" aria-label="Turn view right">Turn ↻</button>
-      </div>
-      <div class="row">
-        <button type="button" class="big" data-action="undo">↶ Undo</button>
-        <button type="button" class="big" data-action="redo">↷ Redo</button>
-      </div>
-      <button type="button" class="big wide" data-action="empty">✋ Empty hand</button>
-      <h2>LEGO set</h2>
-      <div class="row">
+    <aside id="set-panel">
+      <button type="button" class="set-card" data-action="gallery" aria-label="Choose a LEGO set">
+        <img id="set-thumb" alt="" />
+        <span class="set-text"><b id="set-name">Loading…</b><span id="set-meta"></span></span>
+        <span class="chevron">▾</span>
+      </button>
+      <div class="row set-only">
         <button type="button" class="big" data-action="setmode" data-value="build">Build it</button>
         <button type="button" class="big" data-action="setmode" data-value="built">Show built</button>
       </div>
-      <div class="row">
+      <div class="row set-only">
         <button type="button" class="big" data-action="step" data-value="-1" aria-label="Back one piece or step">◀ Back</button>
         <button type="button" class="big" data-action="step" data-value="1" aria-label="Next piece or step">Next ▶</button>
       </div>
-      <button type="button" class="big wide" data-action="set">Next set</button>
     </aside>
+
+    <div id="gallery" hidden>
+      <div class="gallery-head">
+        <h2>Pick what to build</h2>
+        <button type="button" class="big" data-action="gallery-close">✕ Close</button>
+      </div>
+      <div id="gallery-grid"></div>
+    </div>
 
     <div id="hud">
       <div id="hud-set"></div>
@@ -59,11 +51,12 @@
       <div id="hand-status"></div>
       <ul id="legend">
         <li><b>Build it</b> pinch the first piece down anywhere, then carry each piece to its glowing spot</li>
-        <li><b>Right pinch</b> pick from tray / place</li>
+        <li><b>Left palm open, fingers spread</b> brick &amp; color menu at your cursor</li>
+        <li><b>Right pinch</b> place / pick from a menu</li>
         <li><b>Right fist (hold)</b> turn the set before its first piece · redo · empty hand</li>
         <li><b>Left pinch + drag</b> turn / tilt; push or pull to zoom</li>
         <li><b>Left fist (hold)</b> undo</li>
-        <li><b>Keys</b> R turn set · ⌘/Ctrl+Z undo, +Shift redo · ←/→ back/next · B build / show built · N next set · P projector · 9 frame set · 0 whole board</li>
+        <li><b>Keys</b> Space menu · G sets · R rotate / turn set · ⌘/Ctrl+Z undo, +Shift redo · ←/→ back/next · B build / show built · N next set · P projector · 9 frame set · 0 whole board</li>
       </ul>
     </div>
 

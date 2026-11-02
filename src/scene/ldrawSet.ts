@@ -415,3 +415,58 @@ function findSource(source: THREE.Object3D, clone: THREE.Object3D, mesh: THREE.O
   for (const i of path) s = s.children[i];
   return (s as THREE.Mesh).isMesh ? (s as THREE.Mesh) : null;
 }
+
+export interface SetPreview {
+  /** PNG data URL of the finished set. */
+  image: string;
+  pieces: number;
+  steps: number;
+}
+
+const previews = new Map<string, Promise<SetPreview>>();
+
+/** A picture and size of a set for the set gallery, rendered once and cached. */
+export function previewSet(info: SetInfo): Promise<SetPreview> {
+  let p = previews.get(info.id);
+  if (!p) {
+    p = renderPreview(info);
+    previews.set(info.id, p);
+  }
+  return p;
+}
+
+async function renderPreview(info: SetInfo): Promise<SetPreview> {
+  const model = await new LDrawLoader().loadAsync(`${import.meta.env.BASE_URL}ldraw/models/${encodeURIComponent(info.file)}`);
+  model.rotation.x = Math.PI;
+  model.scale.setScalar(LDU);
+  model.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(model);
+  const center = box.getCenter(new THREE.Vector3());
+  const radius = box.getSize(new THREE.Vector3()).length() / 2;
+
+  const scene = new THREE.Scene();
+  scene.add(model, new THREE.HemisphereLight('#ffffff', '#445066', 2.2));
+  const sun = new THREE.DirectionalLight('#ffffff', 2.5);
+  sun.position.set(1, 2, 1.5);
+  scene.add(sun);
+  const fov = 30;
+  const camera = new THREE.PerspectiveCamera(fov, 4 / 3, 0.1, 1000);
+  const distance = (radius / Math.sin(((fov / 2) * Math.PI) / 180)) * 0.9;
+  camera.position.copy(center).addScaledVector(new THREE.Vector3(1, 0.9, 1.3).normalize(), distance);
+  camera.lookAt(center);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+  try {
+    renderer.setPixelRatio(1);
+    renderer.setSize(320, 240, false);
+    renderer.render(scene, camera);
+    return {
+      image: renderer.domElement.toDataURL('image/png'),
+      pieces: collectPieces(model).length,
+      steps: model.userData.numBuildingSteps ?? 1,
+    };
+  } finally {
+    renderer.dispose();
+    renderer.forceContextLoss();
+  }
+}
