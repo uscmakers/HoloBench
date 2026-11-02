@@ -34,6 +34,8 @@ export class Interaction {
    * from free-brick placing. Called with a null cursor when the cursor is over the tray or gone.
    */
   buildAreaOverride: (cursor: { x: number; y: number } | null, pressStarted: boolean) => boolean = () => false;
+  /** Replaces the editor's undo/redo state for the tray buttons while something else owns undo (null = editor's). */
+  historyOverride: () => { canUndo: boolean; canRedo: boolean } | null = () => null;
 
   constructor(
     private model: BuildModel,
@@ -84,6 +86,7 @@ export class Interaction {
         if (value) this.color = value;
         break;
       case 'rotate':
+        if (this.extraAction('rotate')) break;
         if (!this.held) this.flash('Pick a brick first, then rotate it', performance.now());
         else {
           this.held = { ...this.held, rot: nextRotation(this.held.rot) };
@@ -97,7 +100,7 @@ export class Interaction {
         if (!this.extraAction('undo')) this.model.undo();
         break;
       case 'redo':
-        this.model.redo();
+        if (!this.extraAction('redo')) this.model.redo();
         break;
       case 'empty':
         this.held = null;
@@ -116,8 +119,9 @@ export class Interaction {
     for (const el of document.querySelectorAll<HTMLElement>('[data-action="color"]')) {
       el.classList.toggle('selected', el.dataset.value === this.color);
     }
-    for (const el of document.querySelectorAll<HTMLButtonElement>('[data-action="undo"]')) el.disabled = !this.model.canUndo;
-    for (const el of document.querySelectorAll<HTMLButtonElement>('[data-action="redo"]')) el.disabled = !this.model.canRedo;
+    const history = this.historyOverride() ?? this.model;
+    for (const el of document.querySelectorAll<HTMLButtonElement>('[data-action="undo"]')) el.disabled = !history.canUndo;
+    for (const el of document.querySelectorAll<HTMLButtonElement>('[data-action="redo"]')) el.disabled = !history.canRedo;
   }
 
   private setHover(el: Element | null) {

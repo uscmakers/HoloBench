@@ -34,6 +34,7 @@ async function showSet(i: number) {
   try {
     await setView.load(SETS[setIndex]);
     frameSet();
+    interaction.syncTray();
   } catch (e) {
     interaction.notify(`Couldn't load ${SETS[setIndex].name}`);
     console.error(e);
@@ -50,17 +51,26 @@ interaction.extraAction = (action, value) => {
   } else if (action === 'step') setView.setStep(setView.step + Number(value));
   else if (action === 'set') void showSet(setIndex + 1);
   else if (action === 'setmode') setView.setMode(value === 'built' ? 'built' : 'build');
-  else if (action === 'undo' && building) return setView.undoPiece() || true;
-  else return false;
+  else if (action === 'undo' && building) setView.undoPiece();
+  else if (action === 'redo' && building) setView.redoPiece();
+  else if (action === 'rotate' && building && !setView.complete) {
+    if (setView.turn()) interaction.notify('⟳ Turned the set');
+    else interaction.warn('The set is anchored. Undo back to the first piece to turn it');
+  } else return false;
   syncSetButtons();
   return true;
 };
+
+// While building a set, undo/redo walk through its pieces.
+interaction.historyOverride = () =>
+  setView.mode === 'build' ? { canUndo: setView.canUndo, canRedo: setView.canRedo } : null;
 
 // Build mode: the hand (or mouse) carries the next piece of the set over the build area.
 interaction.buildAreaOverride = (cursor, pressStarted) => {
   if (setView.mode !== 'build' || setView.complete) return false;
   const result = setView.updateHeld(cursor ? view.rayAt(cursor) : null, pressStarted);
   if (result === 'miss') interaction.warn('Move the piece onto its glowing spot');
+  if (result === 'placed') interaction.syncTray();
   if (result === 'placed' && setView.complete) interaction.notify(`${setView.info?.name} complete`);
   return true;
 };
@@ -177,8 +187,16 @@ function frame(now: number) {
   const vd = hand.consumeViewDelta();
   if (vd.dx || vd.dy || vd.zoom !== 1) view.orbitBy(-vd.dx * YAW_GAIN, -vd.dy * TILT_GAIN, Math.pow(vd.zoom, ZOOM_GAIN));
 
+  const settingUp = setView.mode === 'build' && !setView.complete;
   for (const ev of hand.events.splice(0)) {
-    if (ev === 'cancel' && interaction.held) {
+    // Right fist: while building a set it turns the set (before the first piece) or redoes; otherwise it empties the hand.
+    if (ev === 'cancel' && settingUp && !setView.anchored) interaction.runAction('rotate');
+    else if (ev === 'cancel' && settingUp) {
+      if (setView.canRedo) {
+        interaction.runAction('redo');
+        interaction.notify('↷ Put the piece back');
+      }
+    } else if (ev === 'cancel' && interaction.held) {
       interaction.runAction('empty');
       interaction.notify('✊ Cancelled: hand is empty');
     } else if (ev === 'undo') {
@@ -205,11 +223,15 @@ function frame(now: number) {
       ? `${s.name} (${s.id}) · step ${setView.step + 1} of ${setView.numSteps}`
       : setView.complete
         ? `${s.name} (${s.id}) · complete`
-        : `${s.name} (${s.id}) · piece ${setView.placed + 1} of ${setView.total} · step ${setView.step + 1} of ${setView.numSteps}`;
+        : !setView.anchored
+          ? `${s.name} (${s.id}) · put the first piece anywhere · R or right fist turns the set`
+          : `${s.name} (${s.id}) · piece ${setView.placed + 1} of ${setView.total} · step ${setView.step + 1} of ${setView.numSteps}`;
   const held = interaction.held;
   $('hud-held').textContent =
     setView.mode === 'build' && !setView.complete
-      ? 'Holding the next piece'
+      ? setView.anchored
+        ? 'Holding the next piece'
+        : `Holding the first piece · set turned ${setView.turns * 90}°`
       : held
         ? `Holding ${held.type} at ${held.rot}°`
         : 'Holding nothing';

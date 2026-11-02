@@ -37,9 +37,11 @@ type PieceState = 'placed' | 'target' | 'ghost' | 'hidden';
  *
  * Built mode shows steps up to `step`; the parts added in `step` glow.
  * Build mode starts empty and hands the user one piece at a time, in instruction
- * order: the piece follows the cursor on a horizontal plane at its final height
- * (so no depth input is needed), its spot glows, the rest of the step shows as a
- * faint ghost, and the piece snaps in once it is close enough.
+ * order. The first piece goes anywhere on the baseplate (snapped to the studs,
+ * turned in 90° steps) and anchors the whole set. After that each piece follows
+ * the cursor on a horizontal plane at its final height (so no depth input is
+ * needed), its spot glows, the rest of the step shows as a faint ghost, and the
+ * piece snaps in once it is close enough.
  */
 export class LDrawSetView {
   readonly root = new THREE.Group();
@@ -49,6 +51,10 @@ export class LDrawSetView {
   numSteps = 0;
   /** Build mode: number of pieces placed so far. */
   placed = 0;
+  /** Build mode: whether the first piece is down, fixing where the set stands. */
+  anchored = false;
+  /** Quarter turns of the set around its first piece. */
+  turns = 0;
   pieces: Piece[] = [];
 
   private model: THREE.Group | null = null;
@@ -60,11 +66,26 @@ export class LDrawSetView {
   private heldOriginals = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();
   private loader = new LDrawLoader();
   private loadId = 0;
+  /** Carries the set: sits where the first piece goes, turned by `turns`. Pieces are in its coordinates. */
+  private anchor = new THREE.Group();
+  /** Footprint of the first piece in studs (unturned), to snap it onto the baseplate studs. */
+  private firstSize = { w: 2, d: 2 };
+  /** Build mode: how far redo can go, and where the first piece was if it was undone. */
+  private redoTo = 0;
+  private lastAnchor = { x: 0, z: 0, turns: 0 };
 
-  /** center: where the set's footprint is centred, in world units on the baseplate. */
-  constructor(private center = new THREE.Vector3()) {}
+  /**
+   * center: default spot for the first piece (built mode, or "place it for me"), in world units.
+   * halfSize: half the baseplate size, to keep the first piece on it.
+   */
+  constructor(
+    private center = new THREE.Vector3(),
+    private halfSize = 16,
+  ) {
+    this.root.add(this.anchor);
+  }
 
-  /** Bounds of the whole finished set (excluding the piece in hand). */
+  /** Bounds of the whole finished set where it stands now (excluding the piece in hand). */
   bounds(): THREE.Box3 {
     return this.model ? new THREE.Box3().setFromObject(this.model) : new THREE.Box3();
   }
@@ -77,6 +98,14 @@ export class LDrawSetView {
     return this.placed >= this.pieces.length;
   }
 
+  get canUndo() {
+    return this.mode === 'build' && this.placed > 0;
+  }
+
+  get canRedo() {
+    return this.mode === 'build' && this.placed < this.redoTo;
+  }
+
   /** Step of the next piece to place (build mode). */
   get buildStep() {
     return this.pieces[Math.min(this.placed, this.pieces.length - 1)]?.step ?? 0;
@@ -87,7 +116,7 @@ export class LDrawSetView {
     const model = await this.loader.loadAsync(`${import.meta.env.BASE_URL}ldraw/models/${encodeURIComponent(info.file)}`);
     if (id !== this.loadId) return; // a newer load started meanwhile
 
-    if (this.model) this.root.remove(this.model);
+    if (this.model) this.anchor.remove(this.model);
     this.dropHeld();
     this.originals.clear();
     this.glowMaterials.clear();
@@ -100,19 +129,31 @@ export class LDrawSetView {
         o.receiveShadow = true;
       }
     });
-    // Sit the set on the baseplate, centred on `center`.
-    model.updateMatrixWorld(true);
+    // In anchor coordinates the set stands on y = 0 with its first piece centred on the origin.
+    this.anchor.position.set(0, 0, 0);
+    this.anchor.rotation.set(0, 0, 0);
+    this.anchor.add(model);
+    this.anchor.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(model);
-    const c = box.getCenter(new THREE.Vector3());
-    model.position.set(this.center.x - c.x, -box.min.y, this.center.z - c.z);
+    const pieces = collectPieces(model);
+    const first = pieces[0];
+    const firstBox = new THREE.Box3().setFromObject(first.obj);
+    const shift = new THREE.Vector3(-first.center.x, -box.min.y, -first.center.z);
+    model.position.add(shift);
     model.updateMatrixWorld(true);
+    for (const p of pieces) p.center.add(shift);
+    const size = firstBox.getSize(new THREE.Vector3());
+    this.firstSize = { w: Math.max(1, Math.round(size.x)), d: Math.max(1, Math.round(size.z)) };
 
     this.model = model;
     this.info = info;
     this.numSteps = model.userData.numBuildingSteps ?? 1;
-    this.pieces = collectPieces(model);
+    this.pieces = pieces;
     this.placed = 0;
-    this.root.add(model);
+    this.redoTo = 0;
+    this.anchored = false;
+    this.turns = 0;
+    this.placeAnchor(this.defaultSpot());
     this.setMode(this.mode);
   }
 
@@ -120,6 +161,7 @@ export class LDrawSetView {
     this.mode = mode;
     if (mode === 'built') {
       this.dropHeld();
+      if (!this.anchored) this.placeAnchor(this.defaultSpot());
       this.setStep(this.numSteps - 1, false);
     } else {
       this.refreshBuild();
@@ -148,12 +190,28 @@ export class LDrawSetView {
   updateHeld(ray: THREE.Ray | null, pressStarted: boolean): 'placed' | 'miss' | null {
     if (this.mode !== 'build' || this.complete || !this.held) return null;
     const piece = this.pieces[this.placed];
+    // The anchor only turns about y and sits at y = 0, so the piece's height is the same in world space.
     const hit = ray?.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -piece.center.y), new THREE.Vector3());
     if (!hit) {
       this.held.visible = false;
       return null;
     }
-    const offset = hit.clone().sub(piece.center).setY(0);
+
+    if (!this.anchored) {
+      // First piece: it is free, and carries the (still hidden) set with it.
+      this.placeAnchor(this.snap(hit.x, hit.z, this.turns));
+      this.held.visible = true;
+      this.held.matrix.copy(piece.obj.matrixWorld);
+      if (!pressStarted) return null;
+      this.anchored = true;
+      this.placed = 1;
+      this.redoTo = 1;
+      this.refreshBuild();
+      return 'placed';
+    }
+
+    const target = piece.center.clone().applyMatrix4(this.anchor.matrixWorld);
+    const offset = hit.clone().sub(target).setY(0);
     const snapped = offset.length() < SNAP_RADIUS;
     if (snapped) offset.set(0, 0, 0);
 
@@ -170,16 +228,72 @@ export class LDrawSetView {
   /** Build mode: places the current piece (used on snap, and as "do this one for me"). */
   placeNext() {
     if (this.mode !== 'build' || this.complete) return;
+    if (!this.anchored) {
+      this.placeAnchor(this.defaultSpot());
+      this.anchored = true;
+      this.redoTo = 0;
+    }
     this.placed++;
+    // Later pieces always go to the same spots, so placing one again keeps the redo history.
+    this.redoTo = Math.max(this.redoTo, this.placed);
     this.refreshBuild();
   }
 
-  /** Build mode: takes back the last placed piece. */
+  /** Build mode: takes back the last placed piece. Taking back the first one frees the set to go elsewhere. */
   undoPiece(): boolean {
-    if (this.mode !== 'build' || this.placed === 0) return false;
+    if (!this.canUndo) return false;
     this.placed--;
+    if (this.placed === 0) {
+      this.lastAnchor = { x: this.anchor.position.x, z: this.anchor.position.z, turns: this.turns };
+      this.anchored = false;
+    }
     this.refreshBuild();
     return true;
+  }
+
+  /** Build mode: puts back the piece taken back last (the first one where it was). */
+  redoPiece(): boolean {
+    if (!this.canRedo) return false;
+    if (!this.anchored) {
+      this.turns = this.lastAnchor.turns;
+      this.placeAnchor(this.lastAnchor);
+      this.anchored = true;
+    }
+    this.placed++;
+    this.refreshBuild();
+    return true;
+  }
+
+  /** Build mode, before the first piece is down: turns the set a quarter turn. False once it is anchored. */
+  turn(): boolean {
+    if (this.mode !== 'build' || this.anchored) return false;
+    this.turns = (this.turns + 1) % 4;
+    return true;
+  }
+
+  /** Where the first piece goes by default: `center`, snapped to the studs. */
+  private defaultSpot() {
+    return this.snap(this.center.x, this.center.z, this.turns);
+  }
+
+  /**
+   * Snaps the first piece's centre so its studs sit on the baseplate's: an even number of studs
+   * centres on a seam (whole number), an odd number on a stud (half). Keeps it on the baseplate.
+   */
+  private snap(x: number, z: number, turns: number) {
+    const { w, d } = turns % 2 ? { w: this.firstSize.d, d: this.firstSize.w } : this.firstSize;
+    const axis = (v: number, n: number) => {
+      const limit = this.halfSize - n / 2;
+      const clamped = Math.min(Math.max(v, -limit), limit);
+      return n % 2 ? Math.floor(clamped) + 0.5 : Math.round(clamped);
+    };
+    return { x: axis(x, w), z: axis(z, d), turns };
+  }
+
+  private placeAnchor(spot: { x: number; z: number; turns: number }) {
+    this.anchor.position.set(spot.x, 0, spot.z);
+    this.anchor.rotation.y = (spot.turns * Math.PI) / 2;
+    this.anchor.updateMatrixWorld(true);
   }
 
   private refreshBuild() {
@@ -190,8 +304,16 @@ export class LDrawSetView {
     });
     const step = this.buildStep;
     this.pieces.forEach((p, i) => {
-      const state: PieceState =
-        i < this.placed ? 'placed' : i === this.placed ? 'target' : p.step === step ? 'ghost' : 'hidden';
+      // Until the first piece is down there is nowhere to show the rest.
+      const state: PieceState = !this.anchored
+        ? 'hidden'
+        : i < this.placed
+          ? 'placed'
+          : i === this.placed
+            ? 'target'
+            : p.step === step
+              ? 'ghost'
+              : 'hidden';
       this.applyState(p, state);
     });
     this.step = step;
