@@ -11,9 +11,12 @@ export interface GestureMetrics {
   curl: number;
   /** Index tip to pinky tip, divided by palm length. Large = fingers fanned out. */
   spread: number;
+  /** How many of the four fingers are straight (tip clearly farther from the wrist than the middle joint). */
+  extended: number;
 }
 
 const dist = (a: Point3, b: Point3) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+const EXTENDED_RATIO = 1.15;
 
 /** Size-independent measurements from MediaPipe world landmarks (meters). */
 export function measure(world: Point3[]): GestureMetrics {
@@ -24,6 +27,13 @@ export function measure(world: Point3[]): GestureMetrics {
     middle: dist(world[4], world[12]) / palm,
     curl,
     spread: dist(world[8], world[20]) / palm,
+    // Tip vs middle joint (PIP) of each finger: works at any hand angle, unlike a fixed length.
+    extended: [
+      [8, 6],
+      [12, 10],
+      [16, 14],
+      [20, 18],
+    ].filter(([tip, pip]) => dist(world[tip], world[0]) > dist(world[pip], world[0]) * EXTENDED_RATIO).length,
   };
 }
 
@@ -32,9 +42,11 @@ export interface GestureThresholds {
   pinchOpen: number;
   fistBelow: number;
   fistAbove: number;
-  /** Open palm (menu): fingers straight and fanned out wider than this. */
+  /** Open palm (menu): at least `palmFingers` fingers straight and fanned out wider than `palmSpread`. */
   palmSpread: number;
   palmSpreadRelease: number;
+  palmFingers: number;
+  /** Sanity floor on how open the hand is overall. */
   palmCurl: number;
 }
 
@@ -43,9 +55,10 @@ export const DEFAULT_THRESHOLDS: GestureThresholds = {
   pinchOpen: 0.45,
   fistBelow: 1.15,
   fistAbove: 1.35,
-  palmSpread: 1.2,
-  palmSpreadRelease: 1.0,
-  palmCurl: 1.6,
+  palmSpread: 0.95,
+  palmSpreadRelease: 0.8,
+  palmFingers: 4,
+  palmCurl: 1.45,
 };
 
 /**
@@ -60,13 +73,16 @@ export function classify(m: GestureMetrics, current: Gesture, t: GestureThreshol
   // Middle pinch only counts when the index finger is clearly apart, so a sloppy full pinch isn't misread.
   const middlePinch = m.middle < (current === 'middle' ? t.pinchOpen : t.pinchClose) && m.index > t.pinchOpen;
   if (middlePinch) return 'middle';
-  const palm = m.curl > t.palmCurl && m.spread > (current === 'palm' ? t.palmSpreadRelease : t.palmSpread);
+  const palm =
+    m.extended >= (current === 'palm' ? t.palmFingers - 1 : t.palmFingers) &&
+    m.curl > t.palmCurl &&
+    m.spread > (current === 'palm' ? t.palmSpreadRelease : t.palmSpread);
   if (palm) return 'palm';
   return 'open';
 }
 
 /** Frames a new gesture must persist before it counts (fist is slower so passing through it while moving doesn't trigger). */
-const CONFIRM: Record<Gesture, number> = { none: 1, open: 2, pinch: 2, middle: 3, fist: 8, palm: 6 };
+const CONFIRM: Record<Gesture, number> = { none: 1, open: 2, pinch: 2, middle: 3, fist: 8, palm: 4 };
 
 /** Debounced gesture state for one hand. */
 export class GestureDetector {

@@ -25,10 +25,15 @@ describe('classify', () => {
     expect(classify(measure(hand({ reach: 0.6 })), 'open')).toBe('fist');
   });
   it('recognises an open palm only when the fingers fan out', () => {
-    expect(classify(measure(hand({ pinky: -0.6 })), 'open')).toBe('palm');
-    expect(classify(measure(hand({ pinky: -0.3 })), 'palm')).toBe('palm');
-    expect(classify(measure(hand({ pinky: -0.3 })), 'open')).toBe('open');
-    expect(classify(measure(hand({ pinky: -0.6, reach: 1.4 })), 'open')).toBe('open');
+    expect(classify(measure(hand({ pinky: -0.3 })), 'open')).toBe('palm');
+    expect(classify(measure(hand({ pinky: -0.05 })), 'palm')).toBe('palm');
+    expect(classify(measure(hand({ pinky: -0.05 })), 'open')).toBe('open');
+    expect(classify(measure(hand({ pinky: -0.6, reach: 1.2 })), 'open')).toBe('open');
+  });
+  it('needs the fingers straight for an open palm', () => {
+    const bent = hand({ pinky: -0.6 });
+    for (const pip of [6, 10]) bent[pip] = { x: 0, y: 1.8, z: 0 }; // index and middle folded over
+    expect(classify(measure(bent), 'open')).toBe('open');
   });
   it('does not read a sloppy full pinch as a middle pinch', () => {
     expect(classify(measure(hand({ index: 0.35, middle: 0.1 })), 'open')).toBe('open');
