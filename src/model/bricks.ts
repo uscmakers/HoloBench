@@ -1,7 +1,7 @@
 // Grid units: x and z are in studs, y is in plate heights (1 brick = 3 plates).
 // Real-world scale: 1 stud = 8 mm, 1 plate = 3.2 mm.
 
-export type BrickType = '2x2' | '2x4';
+export type BrickType = '1x1' | '1x2' | '1x4' | '2x2' | '2x3' | '2x4';
 export type Rotation = 0 | 90 | 180 | 270;
 
 export interface BrickDef {
@@ -11,9 +11,15 @@ export interface BrickDef {
 }
 
 export const BRICK_DEFS: Record<BrickType, BrickDef> = {
+  '1x1': { width: 1, depth: 1, height: 3 },
+  '1x2': { width: 1, depth: 2, height: 3 },
+  '1x4': { width: 1, depth: 4, height: 3 },
   '2x2': { width: 2, depth: 2, height: 3 },
+  '2x3': { width: 2, depth: 3, height: 3 },
   '2x4': { width: 2, depth: 4, height: 3 },
 };
+
+export const BRICK_TYPES = Object.keys(BRICK_DEFS) as BrickType[];
 
 export const PALETTE = ['#c91a09', '#0055bf', '#f2cd37', '#237841', '#ffffff', '#05131d'] as const;
 
