@@ -6,6 +6,8 @@ import type { InputSource } from './input/types';
 import { BuildModel } from './model/build';
 import { PALETTE } from './model/bricks';
 import { BuildView } from './scene/view';
+import { LDrawSetView, SETS } from './scene/ldrawSet';
+import * as THREE from 'three';
 import { Interaction } from './app/interaction';
 
 const GESTURE_NAMES = { none: 'not seen', open: 'open', pinch: 'pinch', middle: 'middle pinch', fist: 'fist' };
@@ -22,6 +24,33 @@ const interaction = new Interaction(model, view);
 const mouse = new MouseInput();
 const hand = new HandInput();
 const sources: InputSource[] = [hand, mouse];
+
+// A real LEGO set on the left half of the baseplate; the right half stays free for building.
+const setView = new LDrawSetView(new THREE.Vector3(-model.width / 6, 0, -model.depth / 8));
+view.scene.add(setView.root);
+let setIndex = 0;
+async function showSet(i: number) {
+  setIndex = (i + SETS.length) % SETS.length;
+  try {
+    await setView.load(SETS[setIndex]);
+  } catch (e) {
+    interaction.notify(`Couldn't load ${SETS[setIndex].name}`);
+    console.error(e);
+  }
+}
+void showSet(0);
+
+interaction.extraAction = (action, value) => {
+  if (action === 'step') setView.setStep(setView.step + Number(value));
+  else if (action === 'set') void showSet(setIndex + 1);
+};
+
+function setProjectorMode(on: boolean) {
+  document.body.classList.toggle('projector', on);
+  view.setProjectorMode(on);
+  if (on && !document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(() => {});
+  if (!on && document.fullscreenElement) document.exitFullscreen().catch(() => {});
+}
 
 for (const color of PALETTE) {
   const b = document.createElement('button');
@@ -52,6 +81,11 @@ window.addEventListener('keydown', (e) => {
   else if (e.key === 'q' || e.key === 'Q') interaction.runAction('view', '-45');
   else if (e.key === 'e' || e.key === 'E') interaction.runAction('view', '45');
   else if (e.key === 'Escape') interaction.runAction('empty');
+  else if (e.key === 'ArrowRight') interaction.runAction('step', '1');
+  else if (e.key === 'ArrowLeft') interaction.runAction('step', '-1');
+  else if (e.key === 'n' || e.key === 'N') interaction.runAction('set');
+  else if (e.key === 'p' || e.key === 'P') setProjectorMode(!document.body.classList.contains('projector'));
+  else if (e.key === '0') view.resetView();
   else if (e.key === '1') interaction.runAction('type', '2x2');
   else if (e.key === '2') interaction.runAction('type', '2x4');
 });
@@ -59,6 +93,24 @@ window.addEventListener('keydown', (e) => {
 $('hand-start').addEventListener('click', async () => {
   await hand.start();
   $('hand-start').style.display = hand.status === 'running' ? 'none' : '';
+  await fillCameraList();
+});
+
+const cameraSelect = $<HTMLSelectElement>('camera-select');
+async function fillCameraList() {
+  const cams = await HandInput.listCameras();
+  const active = (hand.video.srcObject as MediaStream | null)?.getVideoTracks()[0]?.getSettings().deviceId ?? hand.deviceId;
+  cameraSelect.replaceChildren(
+    ...cams.map((c, i) => new Option(c.label || `Camera ${i + 1}`, c.deviceId, false, c.deviceId === active)),
+  );
+}
+cameraSelect.addEventListener('change', () => void hand.useCamera(cameraSelect.value));
+navigator.mediaDevices?.addEventListener?.('devicechange', () => void fillCameraList());
+void fillCameraList();
+
+$('projector-toggle').addEventListener('click', () => setProjectorMode(!document.body.classList.contains('projector')));
+document.addEventListener('fullscreenchange', () => {
+  if (!document.fullscreenElement && document.body.classList.contains('projector')) setProjectorMode(false);
 });
 
 $('hand-swap').addEventListener('click', () => {
@@ -89,16 +141,12 @@ function frame(now: number) {
   if (vd.dx || vd.dy || vd.zoom !== 1) view.orbitBy(-vd.dx * YAW_GAIN, -vd.dy * TILT_GAIN, Math.pow(vd.zoom, ZOOM_GAIN));
 
   for (const ev of hand.events.splice(0)) {
-    if (ev === 'rotate') interaction.runAction('rotate');
-    else if (ev === 'cancel' && interaction.held) {
+    if (ev === 'cancel' && interaction.held) {
       interaction.runAction('empty');
       interaction.notify('✊ Cancelled: hand is empty');
     } else if (ev === 'undo') {
       interaction.runAction('undo');
       interaction.notify('↶ Undo');
-    } else if (ev === 'resetView') {
-      view.resetView();
-      interaction.notify('View reset');
     }
   }
 
@@ -113,6 +161,9 @@ function frame(now: number) {
   }
 
   $('hud-source').textContent = `Input: ${active === hand ? 'Hand' : 'Mouse'}`;
+  $('hud-set').textContent = setView.info
+    ? `${setView.info.name} (${setView.info.id}) · step ${setView.step + 1} of ${setView.numSteps}`
+    : 'Loading set…';
   const held = interaction.held;
   $('hud-held').textContent = held ? `Holding ${held.type} at ${held.rot}°` : 'Holding nothing';
   $('hud-message').textContent = interaction.message;
@@ -135,4 +186,4 @@ function frame(now: number) {
 requestAnimationFrame(frame);
 
 // Exposed for debugging in the browser console.
-Object.assign(window, { model, view, hand, interaction });
+Object.assign(window, { model, view, hand, interaction, setView });

@@ -24,7 +24,7 @@ const FREEZE_AFTER_RELEASE_MS = 150;
 const MOVE_EPSILON = 0.003;
 
 export type HandStatus = 'off' | 'loading' | 'running' | 'error';
-export type HandEvent = 'rotate' | 'cancel' | 'undo' | 'resetView';
+export type HandEvent = 'cancel' | 'undo';
 
 /**
  * Webcam hand tracking (MediaPipe) with two roles:
@@ -66,13 +66,50 @@ export class HandInput implements InputSource {
   private releasedAt = 0;
   private state: InputFrame = { cursor: null, pressed: false, pressCount: 0, lastActive: 0 };
 
+  /** Camera to use; remembered across reloads. Empty = browser default. */
+  deviceId = loadCameraChoice();
+
+  /** Video inputs with labels (labels are only filled in after camera permission is granted). */
+  static async listCameras(): Promise<MediaDeviceInfo[]> {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return devices.filter((d) => d.kind === 'videoinput');
+  }
+
+  /** Switches to another camera without reloading the hand model. */
+  async useCamera(deviceId: string) {
+    this.deviceId = deviceId;
+    try {
+      localStorage.setItem(CAMERA_KEY, deviceId);
+    } catch {
+      // Storage can be unavailable (private mode); the choice then lasts for this page only.
+    }
+    if (this.status !== 'running') return;
+    (this.video.srcObject as MediaStream | null)?.getTracks().forEach((t) => t.stop());
+    this.video.srcObject = await navigator.mediaDevices.getUserMedia(this.constraints());
+    await this.video.play();
+  }
+
+  private constraints(): MediaStreamConstraints {
+    const video: MediaTrackConstraints = { width: 640, height: 480 };
+    if (this.deviceId) video.deviceId = { exact: this.deviceId };
+    else video.facingMode = 'user';
+    return { video, audio: false };
+  }
+
   async start() {
     if (this.status === 'loading' || this.status === 'running') return;
     this.status = 'loading';
     try {
       // Some embedded browsers never answer the permission request; don't wait forever.
       const stream = await withTimeout(
-        navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: 'user' }, audio: false }),
+        navigator.mediaDevices.getUserMedia(this.constraints()).catch((e) => {
+          // A remembered camera that was unplugged: fall back to the default one.
+          if (this.deviceId && e?.name === 'OverconstrainedError') {
+            this.deviceId = '';
+            return navigator.mediaDevices.getUserMedia(this.constraints());
+          }
+          throw e;
+        }),
         15000,
         'No camera permission answer. Open this page in Chrome and allow the camera.',
       );
@@ -141,8 +178,8 @@ export class HandInput implements InputSource {
     this.viewLandmarks = lm;
     this.viewRatio = pinchRatio(world);
     const started = this.viewGestures.update(world);
-    if (started === 'middle') this.events.push('undo');
-    if (started === 'fist') this.events.push('resetView');
+    // Middle-finger pinch is not used: it was unreliable on camera.
+    if (started === 'fist') this.events.push('undo');
     const pinched = this.viewGestures.gesture === 'pinch';
     const c = palmCenter(lm);
     const t = now / 1000;
@@ -174,7 +211,6 @@ export class HandInput implements InputSource {
 
     const wasPressed = this.state.pressed;
     const started = this.gestures.update(world);
-    if (started === 'middle') this.events.push('rotate');
     if (started === 'fist') this.events.push('cancel');
     const pressed = this.gestures.gesture === 'pinch';
     if (pressed && !wasPressed) {
@@ -202,4 +238,14 @@ export class HandInput implements InputSource {
 
 function withTimeout<T>(p: Promise<T>, ms: number, message: string): Promise<T> {
   return Promise.race([p, new Promise<T>((_, reject) => setTimeout(() => reject(new Error(message)), ms))]);
+}
+
+const CAMERA_KEY = 'holobench.camera';
+
+function loadCameraChoice(): string {
+  try {
+    return localStorage.getItem(CAMERA_KEY) ?? '';
+  } catch {
+    return '';
+  }
 }

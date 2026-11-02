@@ -27,6 +27,8 @@ export class Interaction {
   messageKind: 'info' | 'error' = 'error';
   private messageUntil = 0;
   private hoverEl: Element | null = null;
+  /** Handles tray actions the editor itself doesn't know (e.g. LDraw set steps). */
+  extraAction: (action: string, value?: string) => void = () => {};
 
   constructor(
     private model: BuildModel,
@@ -90,6 +92,8 @@ export class Interaction {
       case 'empty':
         this.held = null;
         break;
+      default:
+        this.extraAction(action, value);
     }
     this.syncTray();
   }

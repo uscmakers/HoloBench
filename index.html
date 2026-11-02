@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Holo Bricks</title>
+    <title>HoloBench</title>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
@@ -29,9 +29,16 @@
         <button type="button" class="big" data-action="redo">↷ Redo</button>
       </div>
       <button type="button" class="big wide" data-action="empty">✋ Empty hand</button>
+      <h2>LEGO set</h2>
+      <div class="row">
+        <button type="button" class="big" data-action="step" data-value="-1" aria-label="Previous build step">◀ Step</button>
+        <button type="button" class="big" data-action="step" data-value="1" aria-label="Next build step">Step ▶</button>
+      </div>
+      <button type="button" class="big wide" data-action="set">Next set</button>
     </aside>
 
     <div id="hud">
+      <div id="hud-set"></div>
       <div id="hud-source"></div>
       <div id="hud-held"></div>
       <div id="hud-message"></div>
@@ -43,13 +50,15 @@
         <button type="button" id="hand-start" style="flex: 1">Start hand tracking</button>
         <button type="button" id="hand-swap" title="Swap which hand builds">⇄ Swap</button>
       </div>
+      <label class="field">Camera <select id="camera-select"></select></label>
+      <button type="button" id="projector-toggle">Projector mode (P)</button>
       <div id="hand-status"></div>
       <ul id="legend">
         <li><b>Right pinch</b> pick from tray / place</li>
-        <li><b>Right middle-finger pinch</b> rotate brick</li>
         <li><b>Right fist (hold)</b> cancel, empty hand</li>
         <li><b>Left pinch + drag</b> turn / tilt; push or pull to zoom</li>
-        <li><b>Left middle-finger pinch</b> undo · <b>left fist</b> reset view</li>
+        <li><b>Left fist (hold)</b> undo</li>
+        <li><b>Keys</b> ←/→ set steps · N next set · P projector · 0 reset view</li>
       </ul>
     </div>
 

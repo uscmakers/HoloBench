@@ -27,6 +27,8 @@ export class BuildView {
   private raycaster = new THREE.Raycaster();
   private hiddenId: string | null = null;
   private pendingYaw = 0; // radians still to turn the view
+  private hemi = new THREE.HemisphereLight('#bfd9ff', '#1a1d26', 1.1);
+  private sun = new THREE.DirectionalLight('#ffffff', 2.2);
 
   constructor(
     private container: HTMLElement,
@@ -40,8 +42,8 @@ export class BuildView {
 
     this.scene.background = new THREE.Color('#070a12');
     this.scene.fog = new THREE.Fog('#070a12', 60, 120);
-    this.scene.add(new THREE.HemisphereLight('#bfd9ff', '#1a1d26', 1.1));
-    const sun = new THREE.DirectionalLight('#ffffff', 2.2);
+    this.scene.add(this.hemi);
+    const sun = this.sun;
     sun.position.set(18, 30, 12);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
@@ -123,6 +125,15 @@ export class BuildView {
     this.camera.position.copy(this.controls.target).add(new THREE.Vector3().setFromSpherical(s));
   }
 
+  /** Projectors wash out dark scenes: lift the background and lighting so dark bricks stay readable. */
+  setProjectorMode(on: boolean) {
+    const bg = on ? '#1b2438' : '#070a12';
+    (this.scene.background as THREE.Color).set(bg);
+    (this.scene.fog as THREE.Fog).color.set(bg);
+    this.hemi.intensity = on ? 2 : 1.1;
+    this.sun.intensity = on ? 3 : 2.2;
+  }
+
   resetView() {
     this.pendingYaw = 0;
     this.controls.target.set(0, 0, 0);
@@ -130,7 +141,7 @@ export class BuildView {
   }
 
   private homePosition() {
-    return new THREE.Vector3(0, this.model.depth * 0.95, this.model.depth * 1.05);
+    return new THREE.Vector3(0, this.model.depth * 0.75, this.model.depth * 0.95);
   }
 
   /** Turns the view around the build's vertical axis, animated. */
