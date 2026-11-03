@@ -1,4 +1,4 @@
-import { type BrickType, PALETTE, type Rotation, nextRotation } from '../model/bricks';
+import { BRICK_DEFS, type BrickType, PALETTE, type Rotation, nextRotation } from '../model/bricks';
 import type { BuildModel, Reason } from '../model/build';
 import type { BuildView } from '../scene/view';
 import { placementAt } from './target';
@@ -26,7 +26,25 @@ export class Interaction {
   message = '';
   messageKind: 'info' | 'error' = 'error';
   private messageUntil = 0;
-  private hoverEl: Element | null = null;
+  private hoverEl: HTMLElement | null = null;
+  /** Handles tray actions the editor doesn't know (e.g. LDraw set steps). Returns true if it handled one. */
+  extraAction: (action: string, value?: string) => boolean = () => false;
+  /**
+   * Gets first say over the build area (e.g. placing LDraw set pieces). Returns true to take over
+   * from free-brick placing. Called with a null cursor when the cursor is over the tray or gone.
+   */
+  buildAreaOverride: (cursor: { x: number; y: number } | null, pressStarted: boolean) => boolean = () => false;
+  /** Replaces the editor's undo/redo state for the tray buttons while something else owns undo (null = editor's). */
+  historyOverride: () => { canUndo: boolean; canRedo: boolean } | null = () => null;
+  /** Called after every action, e.g. to close or refresh a menu. */
+  onAction: (action: string, value?: string) => void = () => {};
+  /** Holding the cursor on a button this long picks it, where `canDwell` allows (e.g. menus, by hand). */
+  dwellMs = 700;
+  canDwell: (el: HTMLElement) => boolean = () => false;
+  // Keyed by action and value, not element, so a menu redrawn under the cursor doesn't restart or repeat a pick.
+  private dwellKey = '';
+  private dwellSince = 0;
+  private dwellDone = '';
 
   constructor(
     private model: BuildModel,
@@ -40,17 +58,23 @@ export class Interaction {
     const button = el?.closest<HTMLElement>('[data-action]') ?? null;
     this.setHover(button);
 
+    this.dwell(button, pressStarted, now);
     if (button) {
+      this.buildAreaOverride(null, false);
       this.view.setGhost(null, this.color, false);
       if (pressStarted) this.runAction(button.dataset.action!, button.dataset.value);
       return;
     }
 
     const onBuild = !!cursor && el === this.view.renderer.domElement;
+    if (this.buildAreaOverride(onBuild ? cursor : null, onBuild && pressStarted)) {
+      this.view.setGhost(null, this.color, false);
+      return;
+    }
     const hit = onBuild && this.held ? this.view.pick(cursor!) : null;
     if (!this.held || !hit) {
       this.view.setGhost(null, this.color, false);
-      if (pressStarted && onBuild && !this.held) this.flash('Pick a brick from the tray first', now);
+      if (pressStarted && onBuild && !this.held) this.flash('Show your left palm (or press Space) to pick a brick', now);
       return;
     }
 
@@ -72,26 +96,31 @@ export class Interaction {
         if (value) this.color = value;
         break;
       case 'rotate':
+        if (this.extraAction('rotate')) break;
         if (!this.held) this.flash('Pick a brick first, then rotate it', performance.now());
         else {
           this.held = { ...this.held, rot: nextRotation(this.held.rot) };
-          if (this.held.type === '2x2') this.flash('2×2 is square, so it looks the same rotated', performance.now());
+          const { width, depth } = BRICK_DEFS[this.held.type];
+          if (width === depth) this.flash('A square brick looks the same rotated', performance.now());
         }
         break;
       case 'view':
         this.view.turnView(Number(value));
         break;
       case 'undo':
-        this.model.undo();
+        if (!this.extraAction('undo')) this.model.undo();
         break;
       case 'redo':
-        this.model.redo();
+        if (!this.extraAction('redo')) this.model.redo();
         break;
       case 'empty':
         this.held = null;
         break;
+      default:
+        this.extraAction(action, value);
     }
     this.syncTray();
+    this.onAction(action, value);
   }
 
   /** Marks the selected brick type and color in the tray. */
@@ -102,15 +131,40 @@ export class Interaction {
     for (const el of document.querySelectorAll<HTMLElement>('[data-action="color"]')) {
       el.classList.toggle('selected', el.dataset.value === this.color);
     }
-    for (const el of document.querySelectorAll<HTMLButtonElement>('[data-action="undo"]')) el.disabled = !this.model.canUndo;
-    for (const el of document.querySelectorAll<HTMLButtonElement>('[data-action="redo"]')) el.disabled = !this.model.canRedo;
+    const history = this.historyOverride() ?? this.model;
+    for (const el of document.querySelectorAll<HTMLButtonElement>('[data-action="undo"]')) el.disabled = !history.canUndo;
+    for (const el of document.querySelectorAll<HTMLButtonElement>('[data-action="redo"]')) el.disabled = !history.canRedo;
   }
 
-  private setHover(el: Element | null) {
+  /** Fills the hovered button's --dwell (0..1) and picks it when full. A pinch counts as the pick. */
+  private dwell(el: HTMLElement | null, pressStarted: boolean, now: number) {
+    const key = el && this.canDwell(el) ? `${el.dataset.action}|${el.dataset.value ?? ''}` : '';
+    if (key !== this.dwellKey) {
+      this.dwellKey = key;
+      this.dwellSince = now;
+      this.dwellDone = '';
+    }
+    if (pressStarted) this.dwellDone = key;
+    if (!el || !key) return;
+    const progress = key === this.dwellDone ? 0 : Math.min((now - this.dwellSince) / this.dwellMs, 1);
+    el.style.setProperty('--dwell', String(progress));
+    if (progress < 1) return;
+    this.dwellDone = key;
+    el.style.setProperty('--dwell', '0');
+    this.runAction(el.dataset.action!, el.dataset.value);
+  }
+
+  private setHover(el: HTMLElement | null) {
     if (el === this.hoverEl) return;
+    this.hoverEl?.style.removeProperty('--dwell');
     this.hoverEl?.classList.remove('hover');
     el?.classList.add('hover');
     this.hoverEl = el;
+  }
+
+  /** Error-style feedback (something didn't work). */
+  warn(text: string) {
+    this.flash(text, performance.now());
   }
 
   /** Neutral feedback, e.g. confirming a gesture was recognised. */

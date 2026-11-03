@@ -6,14 +6,14 @@ import type { Point3 } from './handMath';
  * Synthetic hand in world units: wrist at origin, middle knuckle 1 unit up (palm length 1).
  * `reach` = fingertip distance from the wrist (about 1.9 open, about 1.0 curled into a fist).
  */
-function hand({ index = 0.8, middle = 0.8, reach = 1.9 } = {}): Point3[] {
+function hand({ index = 0.8, middle = 0.8, reach = 1.9, pinky = 0.8 } = {}): Point3[] {
   const lm: Point3[] = Array.from({ length: 21 }, () => ({ x: 0, y: 0, z: 0 }));
   lm[9] = { x: 0, y: 1, z: 0 };
   lm[4] = { x: 0, y: reach, z: 0 }; // thumb tip
   lm[8] = { x: index, y: reach, z: 0 };
   lm[12] = { x: middle, y: reach, z: 0 };
   lm[16] = { x: 0.6, y: reach, z: 0 };
-  lm[20] = { x: 0.8, y: reach, z: 0 };
+  lm[20] = { x: pinky, y: reach, z: 0 };
   return lm;
 }
 
@@ -23,6 +23,17 @@ describe('classify', () => {
     expect(classify(measure(hand({ index: 0.1 })), 'open')).toBe('pinch');
     expect(classify(measure(hand({ middle: 0.1 })), 'open')).toBe('middle');
     expect(classify(measure(hand({ reach: 0.6 })), 'open')).toBe('fist');
+  });
+  it('recognises an open palm only when the fingers fan out', () => {
+    expect(classify(measure(hand({ pinky: -0.3 })), 'open')).toBe('palm');
+    expect(classify(measure(hand({ pinky: -0.05 })), 'palm')).toBe('palm');
+    expect(classify(measure(hand({ pinky: -0.05 })), 'open')).toBe('open');
+    expect(classify(measure(hand({ pinky: -0.6, reach: 1.2 })), 'open')).toBe('open');
+  });
+  it('needs the fingers straight for an open palm', () => {
+    const bent = hand({ pinky: -0.6 });
+    for (const pip of [6, 10]) bent[pip] = { x: 0, y: 1.8, z: 0 }; // index and middle folded over
+    expect(classify(measure(bent), 'open')).toBe('open');
   });
   it('does not read a sloppy full pinch as a middle pinch', () => {
     expect(classify(measure(hand({ index: 0.35, middle: 0.1 })), 'open')).toBe('open');
