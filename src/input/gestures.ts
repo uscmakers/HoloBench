@@ -1,6 +1,6 @@
 import type { Point3 } from './handMath';
 
-export type Gesture = 'none' | 'open' | 'pinch' | 'middle' | 'fist' | 'palm';
+export type Gesture = 'none' | 'open' | 'pinch' | 'middle' | 'fist' | 'palm' | 'point';
 
 export interface GestureMetrics {
   /** Thumb tip to index tip, divided by palm length. */
@@ -13,6 +13,7 @@ export interface GestureMetrics {
   spread: number;
   /** How many of the four fingers are straight (tip clearly farther from the wrist than the middle joint). */
   extended: number;
+  pointing: boolean;
 }
 
 const dist = (a: Point3, b: Point3) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
@@ -22,10 +23,26 @@ const EXTENDED_RATIO = 1.15;
 export function measure(world: Point3[]): GestureMetrics {
   const palm = Math.max(dist(world[0], world[9]), 1e-6);
   const curl = [8, 12, 16, 20].reduce((s, i) => s + dist(world[i], world[0]), 0) / 4 / palm;
+  const fingerExtended = [
+    [8, 6],
+    [12, 10],
+    [16, 14],
+    [20, 18],
+  ].map(([tip, pip]) =>
+    dist(world[tip], world[0]) > dist(world[pip], world[0]) * EXTENDED_RATIO,
+  );
+
+  const pointing =
+    fingerExtended[0] &&
+    !fingerExtended[1] &&
+    !fingerExtended[2] &&
+    !fingerExtended[3] &&
+    dist(world[4], world[8]) / palm > 0.4;
+
   return {
     index: dist(world[4], world[8]) / palm,
     middle: dist(world[4], world[12]) / palm,
-    curl,
+    pointing, curl,
     spread: dist(world[8], world[20]) / palm,
     // Tip vs middle joint (PIP) of each finger: works at any hand angle, unlike a fixed length.
     extended: [
@@ -73,6 +90,7 @@ export function classify(m: GestureMetrics, current: Gesture, t: GestureThreshol
   // Middle pinch only counts when the index finger is clearly apart, so a sloppy full pinch isn't misread.
   const middlePinch = m.middle < (current === 'middle' ? t.pinchOpen : t.pinchClose) && m.index > t.pinchOpen;
   if (middlePinch) return 'middle';
+  if (m.pointing) return 'point';
   const palm =
     m.extended >= (current === 'palm' ? t.palmFingers - 1 : t.palmFingers) &&
     m.curl > t.palmCurl &&
@@ -82,7 +100,9 @@ export function classify(m: GestureMetrics, current: Gesture, t: GestureThreshol
 }
 
 /** Frames a new gesture must persist before it counts (fist is slower so passing through it while moving doesn't trigger). */
-const CONFIRM: Record<Gesture, number> = { none: 1, open: 2, pinch: 2, middle: 3, fist: 8, palm: 4 };
+const CONFIRM: Record<Gesture, number> = {
+  none: 1, open: 2, pinch: 2, middle: 3, fist: 8, palm: 4, point: 3,
+};
 
 /** Debounced gesture state for one hand. */
 export class GestureDetector {

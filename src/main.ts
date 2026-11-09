@@ -160,6 +160,7 @@ function menuItems(): { items: MenuItem[]; center: string } {
     { action: 'rotate', label: '⟳<small>Rotate</small>', title: 'Rotate the brick', ring: 'outer' },
     { action: 'undo', label: '↶<small>Undo</small>', title: 'Undo', ring: 'outer' },
     { action: 'redo', label: '↷<small>Redo</small>', title: 'Redo', ring: 'outer' },
+    { action: 'move-mode', label: '⇄<small>Move Legos</small>', title: 'Move a block and its stack', ring: 'outer' },
   );
   const held = interaction.held;
   const center = held
@@ -177,12 +178,15 @@ function openMenu(at: { x: number; y: number } | null, by: 'hand' | 'toggle') {
 
 // With the hand, resting on a menu or gallery option picks it; no pinch needed.
 let handDriving = false;
-interaction.canDwell = (el) => handDriving && !!el.closest('#radial-menu, #gallery');
+interaction.canDwell = (el) =>
+  handDriving &&
+  hand.gestures.gesture === 'point' &&
+  !!el.closest('#radial-menu, #gallery');
 
 interaction.onAction = (action) => {
   if (!menu.open) return;
   // Choosing a brick is the end of a pick; colors and actions keep the menu up for more.
-  if (action === 'type' || action === 'gallery' || action === 'setmode') menu.hide();
+  if (action === 'type' || action === 'gallery' || action === 'setmode' || action === 'move-mode') menu.hide();
   else {
     const { items, center } = menuItems();
     menu.render(items, center);
@@ -340,6 +344,9 @@ function frame(now: number) {
         interaction.runAction('redo');
         interaction.notify('↷ Put the piece back');
       }
+    } else if (ev === 'cancel' && interaction.moveMode) {
+      interaction.cancelMove();
+      interaction.notify('Cancelled moving the stack');
     } else if (ev === 'cancel' && interaction.held) {
       interaction.runAction('empty');
       interaction.notify('✊ Cancelled: hand is empty');

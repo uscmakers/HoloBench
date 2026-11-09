@@ -209,7 +209,8 @@ export class HandInput implements InputSource {
 
     this.landmarks = lm;
     this.ratio = pinchRatio(world);
-    const raw = mapToViewport(palmCenter(lm), this.zone);
+    const anchor = this.gestures.gesture === 'point' ? lm[8] : palmCenter(lm);
+    const raw = mapToViewport(anchor, this.zone);
     const smooth = { x: this.fx.filter(raw.x, now / 1000), y: this.fy.filter(raw.y, now / 1000) };
     this.history.push({ t: now, ...smooth });
     while (this.history.length && now - this.history[0].t > 500) this.history.shift();

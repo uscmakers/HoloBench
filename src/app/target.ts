@@ -11,11 +11,11 @@ export function placementAt(
   gz: number,
   type: BrickType,
   rot: Rotation,
-  ignoreId?: string,
+  ignoreIds?: string | ReadonlySet<string>,
 ): Placement {
   const { w, d } = footprintSize(type, rot);
   const x = Math.min(Math.max(Math.round(gx - w / 2), 0), model.width - w);
   const z = Math.min(Math.max(Math.round(gz - d / 2), 0), model.depth - d);
-  const y = model.dropHeight({ type, x, z, rot }, ignoreId);
+  const y = model.dropHeight({ type, x, z, rot }, ignoreIds);
   return { type, x, y, z, rot };
 }

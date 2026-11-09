@@ -1,4 +1,4 @@
-import { BRICK_DEFS, type BrickType, PALETTE, type Rotation, nextRotation } from '../model/bricks';
+import { BRICK_DEFS, type Brick, type BrickType, PALETTE, type Rotation, nextRotation } from '../model/bricks';
 import type { BuildModel, Reason } from '../model/build';
 import type { BuildView } from '../scene/view';
 import { placementAt } from './target';
@@ -22,6 +22,8 @@ export interface Held {
  */
 export class Interaction {
   held: Held | null = null;
+  moveMode = false;
+  private movingStack: { id: string; bricks: Brick[] } | null = null;
   color: string = PALETTE[0];
   message = '';
   messageKind: 'info' | 'error' = 'error';
@@ -67,6 +69,91 @@ export class Interaction {
     }
 
     const onBuild = !!cursor && el === this.view.renderer.domElement;
+    if (this.moveMode) {
+      this.buildAreaOverride(onBuild ? cursor : null, false);
+      this.view.setGhost(null, this.color, false);
+
+      if (!onBuild || !cursor) {
+        this.view.setGhostStack([], true);
+        return;
+      }
+
+      if (!this.movingStack) {
+        this.view.setGhostStack([], true);
+
+        if (pressStarted) {
+          const id = this.view.brickAt(cursor);
+          if (!id) {
+            this.flash('Point to a block and pinch to pick it up', now);
+            return;
+          }
+
+          const bricks = this.model.stackAbove(id);
+          if (!bricks.length) {
+            this.flash('Block not found', now);
+            return;
+          }
+
+          this.movingStack = { id, bricks };
+          this.view.setHidden(bricks.map((brick) => brick.id));
+          this.notify(
+            bricks.length === 1
+              ? 'Picked up 1 block · pinch again to place'
+              : `Picked up ${bricks.length} blocks · pinch again to place`,
+          );
+        }
+
+        return;
+      }
+
+      const root = this.model.getBrick(this.movingStack.id);
+      const hit = this.view.pick(cursor);
+
+      if (!root || !hit) {
+        this.view.setGhostStack([], true);
+        return;
+      }
+
+      const ignoredIds = new Set(this.movingStack.bricks.map((brick) => brick.id));
+      const target = placementAt(
+        this.model,
+        hit.gx,
+        hit.gz,
+        root.type,
+        root.rot,
+        ignoredIds,
+      );
+      const preview = this.model.previewMoveStack(this.movingStack.id, target);
+
+      if (!preview) {
+        this.view.setGhostStack([], false);
+        return;
+      }
+
+      this.view.setGhostStack(
+        preview.bricks.map((brick, index) => ({
+          id: brick.id,
+          placement: preview.placements[index],
+          color: brick.color,
+        })),
+        preview.check.ok,
+      );
+
+      if (pressStarted) {
+        const result = this.model.moveStack(this.movingStack.id, target);
+        if (!result.ok) {
+          this.flash(REASON_TEXT[result.reason], now);
+          return;
+        }
+
+        this.cancelMove();
+        this.notify('Moved the block and its stack');
+      }
+
+      return;
+    }
+
+    this.view.setGhostStack([], true);
     if (this.buildAreaOverride(onBuild ? cursor : null, onBuild && pressStarted)) {
       this.view.setGhost(null, this.color, false);
       return;
@@ -89,6 +176,14 @@ export class Interaction {
 
   runAction(action: string, value?: string) {
     switch (action) {
+      case 'move-mode':
+        if (this.moveMode) {
+          this.cancelMove();
+        } else {
+          this.moveMode = true;
+          this.notify('Move Legos: point at a block and pinch to pick it up');
+        }
+        break;
       case 'type':
         this.held = { type: value as BrickType, rot: this.held?.rot ?? 0 };
         break;
@@ -115,12 +210,20 @@ export class Interaction {
         break;
       case 'empty':
         this.held = null;
+        this.cancelMove();
         break;
       default:
         this.extraAction(action, value);
     }
     this.syncTray();
     this.onAction(action, value);
+  }
+
+  cancelMove() {
+    this.moveMode = false;
+    this.movingStack = null;
+    this.view.setHidden(null);
+    this.view.setGhostStack([], true);
   }
 
   /** Marks the selected brick type and color in the tray. */

@@ -16,7 +16,8 @@ export type Result = { ok: true; brick: Brick } | { ok: false; reason: Reason };
 type Command =
   | { kind: 'add'; brick: Brick }
   | { kind: 'remove'; brick: Brick }
-  | { kind: 'move'; id: string; from: Placement; to: Placement };
+  | { kind: 'move'; id: string; from: Placement; to: Placement }
+  | { kind: 'moveStack'; entries: Array<{ id: string; from: Placement; to: Placement }> };
 
 export const FORMAT = 'holo-bricks';
 export const FORMAT_VERSION = 1;
@@ -60,6 +61,118 @@ export class BuildModel {
     return id ? this.bricks.get(id) : undefined;
   }
 
+  /** The selected brick and the bricks resting directly above it, recursively. */
+  stackAbove(id: string): Brick[] {
+    const first = this.bricks.get(id);
+    if (!first) return [];
+
+    const found = new Set<string>([id]);
+    const queue = [first];
+
+    while (queue.length) {
+      const brick = queue.shift()!;
+      const topY = brick.y + BRICK_DEFS[brick.type].height;
+
+      for (const [x, z] of footprintCells(brick)) {
+        const aboveId = this.cells.get(key(x, topY, z));
+        if (!aboveId || found.has(aboveId)) continue;
+
+        const above = this.bricks.get(aboveId);
+        if (above) {
+          found.add(aboveId);
+          queue.push(above);
+        }
+      }
+    }
+
+    return [...found]
+      .map((brickId) => this.bricks.get(brickId)!)
+      .sort((a, b) => a.y - b.y);
+  }
+
+  /**
+   * Checks where a stack would land without changing the model.
+   * `to` is the new placement for the selected (root) brick.
+   */
+  previewMoveStack(
+    id: string,
+    to: Placement,
+  ): { bricks: Brick[]; placements: Placement[]; check: Check } | null {
+    const bricks = this.stackAbove(id);
+    const root = bricks.find((brick) => brick.id === id);
+    if (!root) return null;
+    if (to.type !== root.type) {
+      return { bricks, placements: [], check: { ok: false, reason: 'collision' } };
+    }
+
+    const dx = to.x - root.x;
+    const dy = to.y - root.y;
+    const dz = to.z - root.z;
+    const placements = bricks.map((brick): Placement => ({
+      type: brick.type,
+      x: brick.x + dx,
+      y: brick.y + dy,
+      z: brick.z + dz,
+      rot: brick.rot,
+    }));
+
+    const ids = new Set(bricks.map((brick) => brick.id));
+    const originals = bricks.map((brick) => ({ ...brick }));
+    const inserted: Brick[] = [];
+    let check: Check = { ok: true };
+
+    // Temporarily remove the old stack so it does not collide with its preview.
+    for (const brick of originals) this.erase(brick.id);
+
+    // Insert bottom-up so upper blocks can validate against the blocks below them.
+    for (let i = 0; i < placements.length; i++) {
+      const placement = placements[i];
+      check = this.validate(placement);
+      if (!check.ok) break;
+
+      const original = originals[i];
+      const moved: Brick = { ...original, ...placement };
+      this.insert(moved);
+      inserted.push(moved);
+    }
+
+    if (check.ok && !this.allGrounded()) {
+      check = { ok: false, reason: 'would_disconnect' };
+    }
+
+    // Restore the original model after previewing.
+    for (const brick of inserted) this.erase(brick.id);
+    for (const brick of originals) this.insert(brick);
+
+    // Keep the `ids` set above explicit: it documents that all old stack cells
+    // were removed before validation and avoids treating them as obstacles.
+    void ids;
+
+    return { bricks, placements, check };
+  }
+
+  /** Moves the selected block and its stack as one undoable operation. */
+  moveStack(id: string, to: Placement): Result {
+    const preview = this.previewMoveStack(id, to);
+    if (!preview) return { ok: false, reason: 'not_found' };
+    if (!preview.check.ok) return preview.check;
+
+    const entries = preview.bricks.map((brick, index) => ({
+      id: brick.id,
+      from: {
+        type: brick.type,
+        x: brick.x,
+        y: brick.y,
+        z: brick.z,
+        rot: brick.rot,
+      },
+      to: preview.placements[index],
+    }));
+
+    this.run({ kind: 'moveStack', entries });
+    return { ok: true, brick: this.bricks.get(id)! };
+  }
+
   get canUndo() {
     return this.undoStack.length > 0;
   }
@@ -69,11 +182,18 @@ export class BuildModel {
   }
 
   /** Lowest y where the brick rests on top of whatever is under its footprint. */
-  dropHeight(p: Omit<Placement, 'y'>, ignoreId?: string): number {
+    dropHeight(
+      p: Omit<Placement, 'y'>,
+      ignoreIds?: string | ReadonlySet<string>,
+    ): number {
     const cells = new Set(footprintCells({ ...p, y: 0 }).map(([x, z]) => `${x},${z}`));
     let top = 0;
     for (const b of this.bricks.values()) {
-      if (b.id === ignoreId) continue;
+      const ignored =
+        typeof ignoreIds === 'string'
+          ? b.id === ignoreIds
+          : ignoreIds?.has(b.id) ?? false;
+      if (ignored) continue;
       if (footprintCells(b).some(([x, z]) => cells.has(`${x},${z}`))) {
         top = Math.max(top, b.y + BRICK_DEFS[b.type].height);
       }
@@ -224,6 +344,14 @@ export class BuildModel {
         this.insert({ ...brick, ...cmd.to });
         break;
       }
+      case 'moveStack': {
+        const bricks = cmd.entries.map((entry) => this.bricks.get(entry.id)!);
+        for (const entry of cmd.entries) this.erase(entry.id);
+        for (let i = 0; i < cmd.entries.length; i++) {
+          this.insert({ ...bricks[i], ...cmd.entries[i].to });
+        }
+        break;
+      }
     }
   }
 
@@ -295,5 +423,14 @@ function invert(cmd: Command): Command {
       return { kind: 'add', brick: cmd.brick };
     case 'move':
       return { kind: 'move', id: cmd.id, from: cmd.to, to: cmd.from };
+    case 'moveStack':
+      return {
+        kind: 'moveStack',
+        entries: cmd.entries.map((entry) => ({
+          id: entry.id,
+          from: entry.to,
+          to: entry.from,
+        })),
+      };
   }
 }
