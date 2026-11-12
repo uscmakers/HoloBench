@@ -3,7 +3,7 @@ import type { InputFrame, InputSource } from './types';
 /** Mouse as a test input: pointer position is the cursor, left button is "pinch". */
 export class MouseInput implements InputSource {
   readonly name = 'mouse';
-  private state: InputFrame = { cursor: null, pressed: false, pressCount: 0, lastActive: 0 };
+  private state: InputFrame = { cursor: null, pressed: false, pressCount: 0, releaseCount: 0, lastActive: 0 };
 
   constructor(target: Window = window) {
     target.addEventListener('pointermove', (e) => this.set(e, this.state.pressed));
@@ -17,6 +17,7 @@ export class MouseInput implements InputSource {
       cursor: { x: e.clientX / window.innerWidth, y: e.clientY / window.innerHeight },
       pressed,
       pressCount: this.state.pressCount + (pressed && !this.state.pressed ? 1 : 0),
+      releaseCount: this.state.releaseCount + (!pressed && this.state.pressed ? 1 : 0),
       lastActive: performance.now(),
     };
   }

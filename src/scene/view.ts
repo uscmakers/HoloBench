@@ -26,10 +26,7 @@ export class BuildView {
   private ghostMaterial = new THREE.MeshStandardMaterial({ transparent: true, opacity: 0.55, depthWrite: false });
   private raycaster = new THREE.Raycaster();
   private hiddenIds = new Set<string>();
-  private stackGhosts = new Map<
-    string,
-    { obj: THREE.Object3D; material: THREE.MeshStandardMaterial; key: string }
-  >();
+  private stackGhosts = new Map<string, { obj: THREE.Object3D; material: THREE.MeshStandardMaterial; key: string }>();
   private pendingYaw = 0; // radians still to turn the view
   private hemi = new THREE.HemisphereLight('#bfd9ff', '#1a1d26', 1.1);
   private sun = new THREE.DirectionalLight('#ffffff', 2.2);
@@ -116,37 +113,23 @@ export class BuildView {
     this.ghostMaterial.opacity = valid ? 0.6 : 0.45;
   }
 
-  /** Shows a ghost for every block in a carried stack. */
-  setGhostStack(
-    items: Array<{ id: string; placement: Placement; color: string }>,
-    valid: boolean,
-  ) {
-    const visibleIds = new Set(items.map((item) => item.id));
-
-    for (const [id, ghost] of this.stackGhosts) {
-      if (!visibleIds.has(id)) ghost.obj.visible = false;
-    }
-
+  /** Shows translucent previews for all bricks in a carried stack. */
+  setGhostStack(items: Array<{ id: string; placement: Placement; color: string }>, valid: boolean) {
+    const keep = new Set(items.map((item) => item.id));
+    for (const [id, ghost] of this.stackGhosts) if (!keep.has(id)) ghost.obj.visible = false;
     for (const item of items) {
       const key = `${item.placement.type}/${item.placement.rot}/${item.color}`;
       let ghost = this.stackGhosts.get(item.id);
-
       if (!ghost || ghost.key !== key) {
         if (ghost) this.scene.remove(ghost.obj);
-
         const material = new THREE.MeshStandardMaterial({
-          color: item.color,
-          transparent: true,
-          opacity: 0.55,
-          depthWrite: false,
+          color: item.color, transparent: true, opacity: 0.55, depthWrite: false,
         });
         const obj = makeBrick(item.placement, material, false);
         this.scene.add(obj);
-
         ghost = { obj, material, key };
         this.stackGhosts.set(item.id, ghost);
       }
-
       placeObject(ghost.obj, item.placement, this.model);
       ghost.obj.visible = true;
       ghost.material.color.set(valid ? item.color : '#ff3b3b');
@@ -158,9 +141,7 @@ export class BuildView {
   /** Hides a placed brick (while it is being carried). */
   setHidden(ids: string[] | null) {
     this.hiddenIds = new Set(ids ?? []);
-    for (const [id, mesh] of this.brickMeshes) {
-      mesh.obj.visible = !this.hiddenIds.has(id);
-    }
+    for (const [id, mesh] of this.brickMeshes) mesh.obj.visible = !this.hiddenIds.has(id);
   }
 
   /**

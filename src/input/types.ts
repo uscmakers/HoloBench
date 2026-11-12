@@ -6,6 +6,10 @@ export interface InputFrame {
   pressed: boolean;
   /** Increments on every press, so a press shorter than one animation frame is not missed. */
   pressCount: number;
+  /** Increments when a held gesture is released. */
+  releaseCount: number;
+  /** Current recognized hand pose; undefined for non-hand input. */
+  gesture?: string;
   /** Last time (ms) the user did something with this device. Used to pick the active device. */
   lastActive: number;
 }

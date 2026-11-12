@@ -17,7 +17,8 @@ type Command =
   | { kind: 'add'; brick: Brick }
   | { kind: 'remove'; brick: Brick }
   | { kind: 'move'; id: string; from: Placement; to: Placement }
-  | { kind: 'moveStack'; entries: Array<{ id: string; from: Placement; to: Placement }> };
+  | { kind: 'moveStack'; entries: Array<{ id: string; from: Placement; to: Placement }> }
+  | { kind: 'color'; id: string; from: string; to: string };
 
 export const FORMAT = 'holo-bricks';
 export const FORMAT_VERSION = 1;
@@ -237,6 +238,14 @@ export class BuildModel {
     return { ok: true, brick };
   }
 
+  /** Change a placed brick's color as one undoable action. */
+  setColor(id: string, color: string): boolean {
+    const brick = this.bricks.get(id);
+    if (!brick || !isColor(color) || brick.color === color) return false;
+    this.run({ kind: 'color', id, from: brick.color, to: color });
+    return true;
+  }
+
   remove(id: string): Result {
     const brick = this.bricks.get(id);
     if (!brick) return { ok: false, reason: 'not_found' };
@@ -332,6 +341,12 @@ export class BuildModel {
 
   private apply(cmd: Command) {
     switch (cmd.kind) {
+      case 'color': {
+        const brick = this.bricks.get(cmd.id);
+        if (brick) brick.color = cmd.to;
+        break;
+      }
+
       case 'add':
         this.insert({ ...cmd.brick });
         break;
@@ -417,6 +432,8 @@ export class BuildModel {
 
 function invert(cmd: Command): Command {
   switch (cmd.kind) {
+    case 'color':
+      return { kind: 'color', id: cmd.id, from: cmd.to, to: cmd.from };
     case 'add':
       return { kind: 'remove', brick: cmd.brick };
     case 'remove':

@@ -1,6 +1,6 @@
 import type { Point3 } from './handMath';
 
-export type Gesture = 'none' | 'open' | 'pinch' | 'middle' | 'fist' | 'palm' | 'point';
+export type Gesture = 'none' | 'open' | 'pinch' | 'middle' | 'fist' | 'palm' | 'grasp' | 'point';
 
 export interface GestureMetrics {
   /** Thumb tip to index tip, divided by palm length. */
@@ -13,6 +13,9 @@ export interface GestureMetrics {
   spread: number;
   /** How many of the four fingers are straight (tip clearly farther from the wrist than the middle joint). */
   extended: number;
+  /** All five fingertips are gathered into a grasp. */
+  grasping: boolean;
+  /** Index extended while the other three fingers are curled. */
   pointing: boolean;
 }
 
@@ -23,34 +26,24 @@ const EXTENDED_RATIO = 1.15;
 export function measure(world: Point3[]): GestureMetrics {
   const palm = Math.max(dist(world[0], world[9]), 1e-6);
   const curl = [8, 12, 16, 20].reduce((s, i) => s + dist(world[i], world[0]), 0) / 4 / palm;
-  const fingerExtended = [
-    [8, 6],
-    [12, 10],
-    [16, 14],
-    [20, 18],
-  ].map(([tip, pip]) =>
+  const fingerExtended = [[8, 6], [12, 10], [16, 14], [20, 18]].map(([tip, pip]) =>
     dist(world[tip], world[0]) > dist(world[pip], world[0]) * EXTENDED_RATIO,
   );
-
-  const pointing =
-    fingerExtended[0] &&
-    !fingerExtended[1] &&
-    !fingerExtended[2] &&
-    !fingerExtended[3] &&
-    dist(world[4], world[8]) / palm > 0.4;
-
+  const tips = [4, 8, 12, 16, 20].map((i) => world[i]);
+  let maxTipGap = 0;
+  for (let i = 0; i < tips.length; i++) {
+    for (let j = i + 1; j < tips.length; j++) maxTipGap = Math.max(maxTipGap, dist(tips[i], tips[j]));
+  }
   return {
     index: dist(world[4], world[8]) / palm,
     middle: dist(world[4], world[12]) / palm,
-    pointing, curl,
+    curl,
     spread: dist(world[8], world[20]) / palm,
     // Tip vs middle joint (PIP) of each finger: works at any hand angle, unlike a fixed length.
-    extended: [
-      [8, 6],
-      [12, 10],
-      [16, 14],
-      [20, 18],
-    ].filter(([tip, pip]) => dist(world[tip], world[0]) > dist(world[pip], world[0]) * EXTENDED_RATIO).length,
+    extended: fingerExtended.filter(Boolean).length,
+    grasping: maxTipGap / palm < 0.58,
+    pointing: fingerExtended[0] && !fingerExtended[1] && !fingerExtended[2] && !fingerExtended[3] &&
+      dist(world[4], world[8]) / palm > 0.4,
   };
 }
 
@@ -84,6 +77,7 @@ export const DEFAULT_THRESHOLDS: GestureThresholds = {
  */
 export function classify(m: GestureMetrics, current: Gesture, t: GestureThresholds = DEFAULT_THRESHOLDS): Gesture {
   const fist = m.curl < (current === 'fist' ? t.fistAbove : t.fistBelow);
+  if (m.grasping) return 'grasp';
   if (fist) return 'fist';
   const indexPinch = m.index < (current === 'pinch' ? t.pinchOpen : t.pinchClose);
   if (indexPinch) return 'pinch';
@@ -101,7 +95,7 @@ export function classify(m: GestureMetrics, current: Gesture, t: GestureThreshol
 
 /** Frames a new gesture must persist before it counts (fist is slower so passing through it while moving doesn't trigger). */
 const CONFIRM: Record<Gesture, number> = {
-  none: 1, open: 2, pinch: 2, middle: 3, fist: 8, palm: 4, point: 3,
+  none: 1, open: 2, pinch: 2, middle: 3, fist: 8, palm: 4, grasp: 3, point: 3,
 };
 
 /** Debounced gesture state for one hand. */

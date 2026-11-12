@@ -33,6 +33,27 @@
       <div id="gallery-grid"></div>
     </div>
 
+    <aside id="brick-sizes" aria-label="Brick sizes">
+      <b>Brick size</b>
+      <button type="button" data-action="type" data-value="1x1">1 × 1</button>
+      <button type="button" data-action="type" data-value="1x2">1 × 2</button>
+      <button type="button" data-action="type" data-value="1x4">1 × 4</button>
+      <button type="button" data-action="type" data-value="2x2">2 × 2</button>
+      <button type="button" data-action="type" data-value="2x3">2 × 3</button>
+      <button type="button" data-action="type" data-value="2x4">2 × 4</button>
+    </aside>
+
+    <aside id="brick-tools" aria-label="Brick color and rotation">
+      <button type="button" class="big" data-action="rotate" title="Rotate selected brick">⟳ Rotate</button>
+      <span class="tools-label">Color</span>
+      <button type="button" class="color-chip" data-action="color" data-value="#c91a09" aria-label="Red" style="--chip:#c91a09"></button>
+      <button type="button" class="color-chip" data-action="color" data-value="#0055bf" aria-label="Blue" style="--chip:#0055bf"></button>
+      <button type="button" class="color-chip" data-action="color" data-value="#f2cd37" aria-label="Yellow" style="--chip:#f2cd37"></button>
+      <button type="button" class="color-chip" data-action="color" data-value="#237841" aria-label="Green" style="--chip:#237841"></button>
+      <button type="button" class="color-chip" data-action="color" data-value="#ffffff" aria-label="White" style="--chip:#ffffff"></button>
+      <button type="button" class="color-chip" data-action="color" data-value="#05131d" aria-label="Black" style="--chip:#05131d"></button>
+    </aside>
+
     <div id="hud">
       <div id="hud-set"></div>
       <div id="hud-source"></div>
@@ -44,23 +65,22 @@
       <canvas id="hand-debug" width="240" height="180"></canvas>
       <div class="row">
         <button type="button" id="hand-start" style="flex: 1">Start hand tracking</button>
-        <button type="button" id="hand-swap" title="Swap which hand builds">⇄ Swap</button>
       </div>
       <label class="field">Camera <select id="camera-select"></select></label>
       <button type="button" id="projector-toggle">Projector mode (P)</button>
       <div id="hand-status"></div>
       <ul id="legend">
-        <li><b>Build it</b> pinch the first piece down anywhere, then carry each piece to its glowing spot</li>
-        <li><b>Left palm open, fingers spread</b> brick &amp; color menu at your cursor</li>
-        <li><b>Right pinch</b> place / pick from a menu</li>
-        <li><b>Right fist (hold)</b> turn the set before its first piece · redo · empty hand</li>
-        <li><b>Left pinch + drag</b> turn / tilt; push or pull to zoom</li>
-        <li><b>Left fist (hold)</b> undo</li>
-        <li><b>Keys</b> Space menu · G sets · R rotate / turn set · ⌘/Ctrl+Z undo, +Shift redo · ←/→ back/next · B build / show built · N next set · P projector · 9 frame set · 0 whole board</li>
+        <li><b>Pinch + move either hand</b> turn / tilt the view; push or pull to zoom</li>
+        <li><b>Grasp a brick size</b> then open your hand over the platform to place one brick</li>
+        <li><b>Grasp a placed brick with either hand</b> and keep holding; point at a color chip with your other hand to recolor it in place</li>
+        <li><b>Grasp a placed brick</b> then open your hand over the platform to move it and the blocks above it</li>
+        <li><b>Fist (hold)</b> cancel the current action</li>
+        <li><b>Keys</b> G sets · R rotate / turn set · ⌘/Ctrl+Z undo, +Shift redo · ←/→ back/next · B build / show built · N next set · P projector · 9 frame set · 0 whole board</li>
       </ul>
     </div>
 
-    <div id="cursor"></div>
+    <div id="cursor" class="hand-cursor" aria-hidden="true"></div>
+    <div id="cursor-other" class="hand-cursor other-hand" aria-hidden="true"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

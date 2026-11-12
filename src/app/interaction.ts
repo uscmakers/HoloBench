@@ -1,4 +1,6 @@
-import { BRICK_DEFS, type Brick, type BrickType, PALETTE, type Rotation, nextRotation } from '../model/bricks';
+import type { InputFrame } from '../input/types';
+import { BRICK_DEFS, type BrickType, PALETTE, isColor, type Rotation, nextRotation } from '../model/bricks';
+import type { Brick } from '../model/bricks';
 import type { BuildModel, Reason } from '../model/build';
 import type { BuildView } from '../scene/view';
 import { placementAt } from './target';
@@ -17,12 +19,11 @@ export interface Held {
 }
 
 /**
- * What a "press" means depends on what's under the cursor: a tray button runs its action,
- * the build places the held brick. Every input device goes through here the same way.
+ * Coordinates palette picks, two-hand recoloring, grasp/release placement, and stack moves.
  */
 export class Interaction {
   held: Held | null = null;
-  moveMode = false;
+  private paletteDrop = false;
   private movingStack: { id: string; bricks: Brick[] } | null = null;
   color: string = PALETTE[0];
   message = '';
@@ -53,9 +54,65 @@ export class Interaction {
     private view: BuildView,
   ) {}
 
+  private handOwner: number | null = null;
+  private handPresses = [0, 0];
+  private recoloredGrab = false;
+
+  get hasHandGrab(): boolean {
+    return this.handOwner !== null;
+  }
+
+  /** Keep a grab attached to its hand while the other hand points at colors. */
+  updateHands(frames: readonly [InputFrame, InputFrame], now: number) {
+    const presses = frames.map((f, i) => !!f.cursor && f.pressed && f.pressCount !== this.handPresses[i]);
+    this.handPresses = frames.map((f) => f.pressCount);
+    if (this.handOwner === null) {
+      const owner = presses.findIndex(Boolean);
+      if (owner >= 0) this.handOwner = owner;
+    }
+    const owner = this.handOwner;
+    if (owner === null) {
+      const f = [...frames].filter((f) => f.cursor).sort((a, b) => b.lastActive - a.lastActive)[0];
+      this.update(f?.cursor ?? null, false, now, f?.gesture ?? 'none');
+      return;
+    }
+    const holding = frames[owner];
+    const other = frames[1 - owner];
+    const released = !holding.cursor || !holding.pressed;
+    if (presses[owner]) this.update(holding.cursor, true, now, holding.gesture);
+
+    if (!released && this.movingStack && other.cursor && other.gesture === 'point') {
+      const button = document.elementFromPoint(other.cursor.x * innerWidth, other.cursor.y * innerHeight)
+        ?.closest<HTMLElement>('[data-action="color"]') ?? null;
+      this.setHover(button);
+      const color = button?.dataset.value;
+      if (color && isColor(color)) {
+        if (this.model.setColor(this.movingStack.id, color)) this.notify('Brick recolored · release your grasp to finish');
+        this.color = color;
+        this.recoloredGrab = true;
+        this.view.setHidden(null);
+        this.view.setGhost(null, color, false);
+        this.view.setGhostStack([], true);
+        this.syncTray();
+      }
+    }
+    if (this.recoloredGrab) {
+      // Recolor in place: releasing must not also commit the pending stack move.
+      if (released) this.cancelMove();
+    } else if (!presses[owner]) {
+      this.update(holding.cursor, false, now, holding.gesture, released);
+    }
+    if (released) {
+      this.handOwner = null;
+      this.recoloredGrab = false;
+      this.setHover(null);
+    }
+  }
+
   /** cursor: viewport 0..1 (null = no cursor). pressStarted: a pinch or click began this frame. */
-  update(cursor: { x: number; y: number } | null, pressStarted: boolean, now: number) {
+  update(cursor: { x: number; y: number } | null, pressStarted: boolean, now: number, gesture = 'none', releaseStarted = false) {
     if (now > this.messageUntil) this.message = '';
+    const openRelease = releaseStarted && (gesture === 'open' || gesture === 'palm');
     const el = cursor ? document.elementFromPoint(cursor.x * innerWidth, cursor.y * innerHeight) : null;
     const button = el?.closest<HTMLElement>('[data-action]') ?? null;
     this.setHover(button);
@@ -64,103 +121,95 @@ export class Interaction {
     if (button) {
       this.buildAreaOverride(null, false);
       this.view.setGhost(null, this.color, false);
-      if (pressStarted) this.runAction(button.dataset.action!, button.dataset.value);
+      this.view.setGhostStack([], true);
+      // A held new brick can still be rotated or recolored from the top controls.
+      // Releasing over these controls edits the held brick; releasing over the board places it.
+      if (this.paletteDrop && releaseStarted && ['rotate', 'color'].includes(button.dataset.action!)) {
+        this.runAction(button.dataset.action!, button.dataset.value);
+        return;
+      }
+      if (releaseStarted && this.movingStack) this.cancelMove();
+      if (releaseStarted && this.paletteDrop) {
+        this.held = null;
+        this.paletteDrop = false;
+      }
+      if (pressStarted) {
+        if (button.dataset.action === 'type' && gesture === 'grasp') this.paletteDrop = true;
+        this.runAction(button.dataset.action!, button.dataset.value);
+      }
       return;
     }
 
     const onBuild = !!cursor && el === this.view.renderer.domElement;
-    if (this.moveMode) {
-      this.buildAreaOverride(onBuild ? cursor : null, false);
-      this.view.setGhost(null, this.color, false);
-
+    if (this.paletteDrop && openRelease && !onBuild) {
+      this.held = null;
+      this.paletteDrop = false;
+      this.notify('Cancelled brick placement · release over the platform to place it');
+    }
+    if (this.movingStack) {
       if (!onBuild || !cursor) {
         this.view.setGhostStack([], true);
-        return;
-      }
-
-      if (!this.movingStack) {
-        this.view.setGhostStack([], true);
-
-        if (pressStarted) {
-          const id = this.view.brickAt(cursor);
-          if (!id) {
-            this.flash('Point to a block and pinch to pick it up', now);
-            return;
-          }
-
-          const bricks = this.model.stackAbove(id);
-          if (!bricks.length) {
-            this.flash('Block not found', now);
-            return;
-          }
-
-          this.movingStack = { id, bricks };
-          this.view.setHidden(bricks.map((brick) => brick.id));
-          this.notify(
-            bricks.length === 1
-              ? 'Picked up 1 block · pinch again to place'
-              : `Picked up ${bricks.length} blocks · pinch again to place`,
-          );
-        }
-
+        if (releaseStarted) this.cancelMove();
         return;
       }
 
       const root = this.model.getBrick(this.movingStack.id);
       const hit = this.view.pick(cursor);
-
       if (!root || !hit) {
         this.view.setGhostStack([], true);
+        if (releaseStarted) this.cancelMove();
         return;
       }
 
-      const ignoredIds = new Set(this.movingStack.bricks.map((brick) => brick.id));
-      const target = placementAt(
-        this.model,
-        hit.gx,
-        hit.gz,
-        root.type,
-        root.rot,
-        ignoredIds,
-      );
-      const preview = this.model.previewMoveStack(this.movingStack.id, target);
+      const ids = new Set(this.movingStack.bricks.map((brick) => brick.id));
+      const target = placementAt(this.model, hit.gx, hit.gz, root.type, root.rot, ids);
+      const preview = this.model.previewMoveStack(root.id, target);
+      if (!preview) return;
+      this.view.setGhostStack(preview.bricks.map((brick, i) => ({
+        id: brick.id, placement: preview.placements[i], color: brick.color,
+      })), preview.check.ok);
 
-      if (!preview) {
-        this.view.setGhostStack([], false);
-        return;
-      }
-
-      this.view.setGhostStack(
-        preview.bricks.map((brick, index) => ({
-          id: brick.id,
-          placement: preview.placements[index],
-          color: brick.color,
-        })),
-        preview.check.ok,
-      );
-
-      if (pressStarted) {
-        const result = this.model.moveStack(this.movingStack.id, target);
+      if (openRelease) {
+        const result = this.model.moveStack(root.id, target);
         if (!result.ok) {
           this.flash(REASON_TEXT[result.reason], now);
+          this.cancelMove();
           return;
         }
-
         this.cancelMove();
-        this.notify('Moved the block and its stack');
+        this.notify('Moved the block and the blocks above it');
+      } else if (releaseStarted) {
+        this.cancelMove();
       }
-
       return;
     }
 
-    this.view.setGhostStack([], true);
+    // Grasping a placed block picks it and the blocks resting on it up as a unit.
+    if (onBuild && pressStarted && gesture === 'grasp') {
+      const id = this.view.brickAt(cursor!);
+      if (id) {
+        const bricks = this.model.stackAbove(id);
+        this.movingStack = { id, bricks };
+        this.view.setHidden(bricks.map((brick) => brick.id));
+        this.notify(`Picked up ${bricks.length} block${bricks.length === 1 ? '' : 's'} · point at a color with your other hand, or open to move`);
+        return;
+      }
+    }
+
     if (this.buildAreaOverride(onBuild ? cursor : null, onBuild && pressStarted)) {
       this.view.setGhost(null, this.color, false);
+      this.view.setGhostStack([], true);
       return;
     }
     const hit = onBuild && this.held ? this.view.pick(cursor!) : null;
     if (!this.held || !hit) {
       this.view.setGhost(null, this.color, false);
+      this.view.setGhostStack([], true);
+      if (openRelease && this.paletteDrop) {
+        this.held = null;
+        this.paletteDrop = false;
+        this.syncTray();
+      }
       if (pressStarted && onBuild && !this.held) this.flash('Show your left palm (or press Space) to pick a brick', now);
       return;
     }
@@ -168,27 +217,34 @@ export class Interaction {
     const target = placementAt(this.model, hit.gx, hit.gz, this.held.type, this.held.rot);
     const check = this.model.validate(target);
     this.view.setGhost(target, this.color, check.ok);
-    if (pressStarted) {
+    this.view.setGhostStack([], true);
+    if ((this.paletteDrop && openRelease) || (!this.paletteDrop && pressStarted)) {
       const result = this.model.add(target, this.color);
-      if (!result.ok) this.flash(REASON_TEXT[result.reason], now);
+      if (!result.ok) {
+        this.flash(REASON_TEXT[result.reason], now);
+        if (this.paletteDrop) {
+          this.held = null;
+          this.paletteDrop = false;
+          this.syncTray();
+        }
+      }
+      else if (this.paletteDrop) {
+        this.held = null;
+        this.paletteDrop = false;
+        this.syncTray();
+      }
     }
   }
 
   runAction(action: string, value?: string) {
     switch (action) {
-      case 'move-mode':
-        if (this.moveMode) {
-          this.cancelMove();
-        } else {
-          this.moveMode = true;
-          this.notify('Move Legos: point at a block and pinch to pick it up');
-        }
-        break;
       case 'type':
         this.held = { type: value as BrickType, rot: this.held?.rot ?? 0 };
         break;
       case 'color':
-        if (value) this.color = value;
+        if (value) {
+          this.color = value;
+        }
         break;
       case 'rotate':
         if (this.extraAction('rotate')) break;
@@ -210,6 +266,7 @@ export class Interaction {
         break;
       case 'empty':
         this.held = null;
+        this.paletteDrop = false;
         this.cancelMove();
         break;
       default:
@@ -220,7 +277,7 @@ export class Interaction {
   }
 
   cancelMove() {
-    this.moveMode = false;
+    this.recoloredGrab = false;
     this.movingStack = null;
     this.view.setHidden(null);
     this.view.setGhostStack([], true);

@@ -182,3 +182,54 @@ describe('save / load', () => {
     expect(() => BuildModel.fromJSON({ ...good, bricks: [{ ...brick, x: 31 }] })).toThrow('out of bounds');
   });
 });
+
+describe('recoloring', () => {
+  it('updates a brick, saves its color, and supports undo and redo', () => {
+    const m = new BuildModel();
+    const result = m.add(at('2x2', 0, 0, 0), RED);
+    if (!result.ok) throw new Error('setup failed');
+    const id = result.brick.id;
+    let calls = 0;
+    m.onChange(() => calls++);
+
+    expect(m.setColor(id, '#0055bf')).toBe(true);
+    expect(m.brickAt(1, 2, 1)?.color).toBe('#0055bf');
+    expect(BuildModel.fromJSON(m.toJSON()).getBricks()[0].color).toBe('#0055bf');
+    m.undo();
+    expect(m.getBrick(id)?.color).toBe(RED);
+    m.redo();
+    expect(m.getBrick(id)?.color).toBe('#0055bf');
+    expect(calls).toBe(3);
+  });
+
+  it('ignores missing bricks, invalid colors and unchanged colors without changing history', () => {
+    const m = new BuildModel();
+    const result = m.add(at('2x2', 0, 0, 0), RED);
+    if (!result.ok) throw new Error('setup failed');
+    const id = result.brick.id;
+    m.setColor(id, '#0055bf');
+    m.undo();
+    let calls = 0;
+    m.onChange(() => calls++);
+
+    expect(m.setColor('missing', '#0055bf')).toBe(false);
+    expect(m.setColor(id, 'invalid')).toBe(false);
+    expect(m.setColor(id, RED)).toBe(false);
+    expect(m.getBrick(id)?.color).toBe(RED);
+    expect(m.canRedo).toBe(true);
+    expect(calls).toBe(0);
+  });
+
+  it('clears redo when a new color is chosen after undo', () => {
+    const m = new BuildModel();
+    const result = m.add(at('2x2', 0, 0, 0), RED);
+    if (!result.ok) throw new Error('setup failed');
+    const id = result.brick.id;
+    m.setColor(id, '#0055bf');
+    m.undo();
+    expect(m.setColor(id, '#237841')).toBe(true);
+    expect(m.canRedo).toBe(false);
+    m.undo();
+    expect(m.getBrick(id)?.color).toBe(RED);
+  });
+});

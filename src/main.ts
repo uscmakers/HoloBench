@@ -4,12 +4,12 @@ import { drawHandDebug } from './input/handDebug';
 import { MouseInput } from './input/mouse';
 import type { InputSource } from './input/types';
 import { BuildModel } from './model/build';
-import { BRICK_DEFS, BRICK_TYPES, PALETTE } from './model/bricks';
+import { BRICK_TYPES } from './model/bricks';
 import { BuildView } from './scene/view';
 import { LDrawSetView, SETS, previewSet } from './scene/ldrawSet';
 import * as THREE from 'three';
 import { Interaction } from './app/interaction';
-import { type MenuItem, RadialMenu, studIcon } from './app/menu';
+import { studIcon } from './app/studIcon';
 
 const GESTURE_NAMES = {
   none: 'not seen',
@@ -18,6 +18,8 @@ const GESTURE_NAMES = {
   middle: 'middle pinch',
   fist: 'fist',
   palm: 'open palm (menu)',
+  grasp: 'grasp',
+  point: 'point',
 };
 function describe(g: GestureDetector) {
   const m = g.metrics;
@@ -39,7 +41,7 @@ const sources: InputSource[] = [hand, mouse];
 const setView = new LDrawSetView(new THREE.Vector3(-model.width / 6, 0, -model.depth / 8), model.width / 2);
 view.scene.add(setView.root);
 let setIndex = 0;
-/** Free build: no set, just bricks from the menu. */
+/** Free build: no set, use the on-screen brick controls. */
 let freeBuild = false;
 /** True while the hand carries set pieces, so the right hand isn't free for loose bricks. */
 const buildingSet = () => !freeBuild && setView.mode === 'build' && !setView.complete;
@@ -77,12 +79,10 @@ function startFreeBuild() {
   $('set-name').textContent = 'Free build';
   $('set-meta').textContent = 'Your own bricks';
   view.resetView();
-  if (!interaction.held) interaction.runAction('type', '2x4');
 }
 
 const gallery = $('gallery');
 function openGallery() {
-  menu.hide();
   gallery.hidden = false;
   const card = (value: string, title: string, meta: string, thumb: string) => {
     const current = value === 'free' ? freeBuild : !freeBuild && Number(value) === setIndex;
@@ -136,63 +136,9 @@ interaction.extraAction = (action, value) => {
 interaction.historyOverride = () =>
   !freeBuild && setView.mode === 'build' ? { canUndo: setView.canUndo, canRedo: setView.canRedo } : null;
 
-// The brick menu opens around the cursor, so choosing a brick is a short move, not a trip to a tray.
-const menu = new RadialMenu(document.body);
-
-function menuItems(): { items: MenuItem[]; center: string } {
-  if (buildingSet()) {
-    const items: MenuItem[] = [
-      { action: 'undo', label: '↶<small>Undo</small>', title: 'Take back the last piece', ring: 'outer' },
-      { action: 'redo', label: '↷<small>Redo</small>', title: 'Put the piece back', ring: 'outer' },
-      { action: 'step', value: '1', label: '✓<small>Place it</small>', title: 'Place this piece for me', ring: 'outer' },
-      { action: 'setmode', value: 'built', label: '▣<small>Show built</small>', title: 'Show the finished set', ring: 'outer' },
-      { action: 'gallery', label: '☰<small>Sets</small>', title: 'Choose another set', ring: 'outer' },
-    ];
-    if (!setView.anchored) items.unshift({ action: 'rotate', label: '⟳<small>Turn set</small>', title: 'Turn the set', ring: 'outer' });
-    return { items, center: `Piece ${setView.placed + 1}<small>of ${setView.total}</small>` };
-  }
-  const items: MenuItem[] = PALETTE.map((c) => ({ action: 'color', value: c, label: '', title: `Color ${c}`, ring: 'inner', swatch: c }));
-  for (const t of BRICK_TYPES) {
-    const { width, depth } = BRICK_DEFS[t];
-    items.push({ action: 'type', value: t, label: `${studIcon(width, depth)}<small>${t.replace('x', '×')}</small>`, title: `${t} brick`, ring: 'outer' });
-  }
-  items.push(
-    { action: 'rotate', label: '⟳<small>Rotate</small>', title: 'Rotate the brick', ring: 'outer' },
-    { action: 'undo', label: '↶<small>Undo</small>', title: 'Undo', ring: 'outer' },
-    { action: 'redo', label: '↷<small>Redo</small>', title: 'Redo', ring: 'outer' },
-    { action: 'move-mode', label: '⇄<small>Move Legos</small>', title: 'Move a block and its stack', ring: 'outer' },
-  );
-  const held = interaction.held;
-  const center = held
-    ? `<span class="dot" style="background:${interaction.color}"></span>${held.type.replace('x', '×')}<small>${held.rot}°</small>`
-    : `<span class="dot" style="background:${interaction.color}"></span>Pick a brick`;
-  return { items, center };
-}
-
-function openMenu(at: { x: number; y: number } | null, by: 'hand' | 'toggle') {
-  if (!gallery.hidden) return;
-  const { items, center } = menuItems();
-  menu.show(at ?? { x: 0.5, y: 0.5 }, by, items, center);
-  interaction.syncTray();
-}
-
-// With the hand, resting on a menu or gallery option picks it; no pinch needed.
-let handDriving = false;
-interaction.canDwell = (el) =>
-  handDriving &&
-  hand.gestures.gesture === 'point' &&
-  !!el.closest('#radial-menu, #gallery');
-
-interaction.onAction = (action) => {
-  if (!menu.open) return;
-  // Choosing a brick is the end of a pick; colors and actions keep the menu up for more.
-  if (action === 'type' || action === 'gallery' || action === 'setmode' || action === 'move-mode') menu.hide();
-  else {
-    const { items, center } = menuItems();
-    menu.render(items, center);
-    interaction.syncTray();
-  }
-};
+// Brick size, color, and rotation controls live in fixed screen panels.
+interaction.canDwell = () => false;
+interaction.onAction = () => {};
 
 // Build mode: the hand (or mouse) carries the next piece of the set over the build area.
 interaction.buildAreaOverride = (cursor, pressStarted) => {
@@ -243,16 +189,11 @@ window.addEventListener('keydown', (e) => {
   } else if (e.key === 'r' || e.key === 'R') interaction.runAction('rotate');
   else if (e.key === 'q' || e.key === 'Q') interaction.runAction('view', '-45');
   else if (e.key === 'e' || e.key === 'E') interaction.runAction('view', '45');
-  else if (e.key === ' ') {
-    e.preventDefault();
-    if (menu.open) menu.hide();
-    else openMenu(mouse.frame().cursor, 'toggle');
-  } else if (e.key === 'g' || e.key === 'G') {
+  else if (e.key === 'g' || e.key === 'G') {
     if (gallery.hidden) openGallery();
     else gallery.hidden = true;
   } else if (e.key === 'Escape') {
-    if (menu.open) menu.hide();
-    else if (!gallery.hidden) gallery.hidden = true;
+    if (!gallery.hidden) gallery.hidden = true;
     else interaction.runAction('empty');
   }
   else if (e.key === 'ArrowRight') interaction.runAction('step', '1');
@@ -288,10 +229,6 @@ document.addEventListener('fullscreenchange', () => {
   if (!document.fullscreenElement && document.body.classList.contains('projector')) setProjectorMode(false);
 });
 
-$('hand-swap').addEventListener('click', () => {
-  hand.swapHands = !hand.swapHands;
-});
-
 function setStatus() {
   const s = setView.info;
   if (freeBuild) return 'Free build';
@@ -299,7 +236,7 @@ function setStatus() {
   const name = `${s.name} (${s.id})`;
   if (setView.mode === 'built') return `${name} · step ${setView.step + 1} of ${setView.numSteps}`;
   if (setView.complete) return `${name} · complete`;
-  if (!setView.anchored) return `${name} · put the first piece anywhere · R or right fist turns the set`;
+  if (!setView.anchored) return `${name} · put the first piece anywhere · R or either fist turns the set`;
   return `${name} · piece ${setView.placed + 1} of ${setView.total} · step ${setView.step + 1} of ${setView.numSteps}`;
 }
 
@@ -308,8 +245,9 @@ const YAW_GAIN = Math.PI * 1.5;
 const TILT_GAIN = Math.PI * 0.8;
 const ZOOM_GAIN = 1.5;
 
-const cursorEl = $('cursor');
+const handCursors = [$('cursor'), $('cursor-other')];
 const seenPresses = new Map<string, number>();
+const seenReleases = new Map<string, number>();
 
 function frame(now: number) {
   hand.update(now);
@@ -320,8 +258,11 @@ function frame(now: number) {
     .sort((a, b) => b.frame().lastActive - a.frame().lastActive)[0];
   const f = active?.frame();
   let pressStarted = !!f && f.pressCount !== (seenPresses.get(active.name) ?? 0);
-  handDriving = active === hand;
-  for (const s of sources) seenPresses.set(s.name, s.frame().pressCount);
+  const releaseStarted = !!f && f.releaseCount !== (seenReleases.get(active.name) ?? 0);
+  for (const s of sources) {
+    seenPresses.set(s.name, s.frame().pressCount);
+    seenReleases.set(s.name, s.frame().releaseCount);
+  }
 
   // Grab the world: the build turns the way the hand moves, so the camera goes the opposite way.
   const vd = hand.consumeViewDelta();
@@ -329,14 +270,6 @@ function frame(now: number) {
 
   const settingUp = buildingSet();
   for (const ev of hand.events.splice(0)) {
-    if (ev === 'menuOpen') {
-      openMenu(hand.frame().cursor, 'hand');
-      continue;
-    }
-    if (ev === 'menuClose') {
-      if (menu.openedBy === 'hand') menu.hide();
-      continue;
-    }
     // Right fist: while building a set it turns the set (before the first piece) or redoes; otherwise it empties the hand.
     if (ev === 'cancel' && settingUp && !setView.anchored) interaction.runAction('rotate');
     else if (ev === 'cancel' && settingUp) {
@@ -344,39 +277,33 @@ function frame(now: number) {
         interaction.runAction('redo');
         interaction.notify('↷ Put the piece back');
       }
-    } else if (ev === 'cancel' && interaction.moveMode) {
-      interaction.cancelMove();
-      interaction.notify('Cancelled moving the stack');
-    } else if (ev === 'cancel' && interaction.held) {
+    } else if (ev === 'cancel') {
       interaction.runAction('empty');
-      interaction.notify('✊ Cancelled: hand is empty');
-    } else if (ev === 'undo') {
-      interaction.runAction('undo');
-      interaction.notify(setView.mode === 'build' ? '↶ Took back the last piece' : '↶ Undo');
+      interaction.notify('✊ Cancelled the current action');
     }
   }
 
-  // A pinch or click outside an open menu or gallery just closes it.
-  if (pressStarted && f?.cursor && (menu.open || !gallery.hidden)) {
+  // A click outside the set gallery closes it.
+  if (pressStarted && f?.cursor && !gallery.hidden) {
     const el = document.elementFromPoint(f.cursor.x * innerWidth, f.cursor.y * innerHeight);
-    if (menu.open && !menu.contains(el)) {
-      menu.hide();
-      pressStarted = false;
-    } else if (!gallery.hidden && !gallery.contains(el)) {
+    if (!gallery.contains(el)) {
       gallery.hidden = true;
       pressStarted = false;
     }
   }
 
-  interaction.update(f?.cursor ?? null, pressStarted, now);
+  if (active === hand || interaction.hasHandGrab) interaction.updateHands(hand.handFrames(), now);
+  else interaction.update(f?.cursor ?? null, pressStarted, now, f?.gesture ?? 'none', releaseStarted);
   view.render();
 
-  const showDot = active === hand && !!f?.cursor;
-  cursorEl.style.display = showDot ? 'block' : 'none';
-  if (showDot && f?.cursor) {
-    cursorEl.style.transform = `translate(${f.cursor.x * innerWidth}px, ${f.cursor.y * innerHeight}px)`;
-    cursorEl.classList.toggle('pressed', f.pressed);
-  }
+  hand.handFrames().forEach((handFrame, i) => {
+    const cursorEl = handCursors[i];
+    cursorEl.style.display = handFrame.cursor ? 'block' : 'none';
+    if (handFrame.cursor) {
+      cursorEl.style.transform = `translate(${handFrame.cursor.x * innerWidth}px, ${handFrame.cursor.y * innerHeight}px)`;
+      cursorEl.classList.toggle('pressed', handFrame.pressed);
+    }
+  });
 
   $('hud-source').textContent = `Input: ${active === hand ? 'Hand' : 'Mouse'}`;
   $('hud-set').textContent = setStatus();
@@ -394,8 +321,8 @@ function frame(now: number) {
   const viewSide = hand.swapHands ? 'Right' : 'Left';
   $('hand-status').innerHTML =
     hand.status === 'running'
-      ? `<span class="build">${buildSide} (build): ${describe(hand.gestures)}</span><br>` +
-        `<span class="view">${viewSide} (view): ${describe(hand.viewGestures)}</span>`
+      ? `<span class="build">${buildSide}: ${describe(hand.gestures)}</span><br>` +
+        `<span class="view">${viewSide}: ${describe(hand.viewGestures)}</span>`
       : hand.status === 'loading'
         ? 'Starting camera and model…'
         : hand.status === 'error'
