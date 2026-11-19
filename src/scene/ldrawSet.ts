@@ -12,6 +12,18 @@ export const SETS: SetInfo[] = [
   { id: '4838-1', name: 'Mini Vehicles', file: '4838-1-MiniVehicles.mpd_Packed.mpd' },
   { id: '889-1', name: 'Radar Truck', file: '889-1-RadarTruck.mpd_Packed.mpd' },
   { id: '30023-1', name: 'Lighthouse', file: '30023-1-Lighthouse.ldr_Packed.mpd' },
+  { id: '4915-1', name: 'Mini Construction', file: '4915-1-MiniConstruction.mpd_Packed.mpd' },
+  { id: '4918-1', name: 'Mini Flyers', file: '4918-1-MiniFlyers.mpd_Packed.mpd' },
+  { id: '1621-1', name: 'Lunar MPV Vehicle', file: '1621-1-LunarMPVVehicle.mpd_Packed.mpd' },
+  { id: '5935-1', name: 'Island Hopper', file: '5935-1-IslandHopper.mpd_Packed.mpd' },
+  { id: '6965-1', name: 'TIE Interceptor (mini)', file: '6965-1-TIEIntercep_4h4MXk5.mpd_Packed.mpd' },
+  { id: '6966-1', name: 'Jedi Starfighter (mini)', file: '6966-1-JediStarfighter-Mini.mpd_Packed.mpd' },
+  { id: '30051-1', name: 'X-wing Fighter (mini)', file: '30051-1-X-wingFighter-Mini.mpd_Packed.mpd' },
+  { id: '30054-1', name: 'AT-ST (mini)', file: '30054-1-AT-ST-Mini.mpd_Packed.mpd' },
+  { id: '4489-1', name: 'AT-AT (mini)', file: '4489-1-AT-AT-Mini.mpd_Packed.mpd' },
+  { id: '4494-1', name: 'Imperial Shuttle (mini)', file: '4494-1-Imperial Shuttle-Mini.mpd_Packed.mpd' },
+  { id: '7140-1', name: 'X-wing Fighter', file: '7140-1-X-wingFighter.mpd_Packed.mpd' },
+  { id: '10174-1', name: 'Imperial AT-ST (UCS)', file: '10174-1-ImperialAT-ST-UCS.mpd_Packed.mpd' },
 ];
 
 /** 'build': the user places the set piece by piece. 'built': the finished set, steppable. */
