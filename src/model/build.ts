@@ -98,8 +98,10 @@ export class BuildModel {
   previewMoveStack(
     id: string,
     to: Placement,
+    brickIds?: readonly string[],
   ): { bricks: Brick[]; placements: Placement[]; check: Check } | null {
-    const bricks = this.stackAbove(id);
+    if (brickIds?.some((id) => !this.bricks.has(id))) return null;
+    const bricks = brickIds ? brickIds.map((id) => this.bricks.get(id)!) : this.stackAbove(id);
     const root = bricks.find((brick) => brick.id === id);
     if (!root) return null;
     if (to.type !== root.type) {
@@ -153,8 +155,8 @@ export class BuildModel {
   }
 
   /** Moves the selected block and its stack as one undoable operation. */
-  moveStack(id: string, to: Placement): Result {
-    const preview = this.previewMoveStack(id, to);
+  moveStack(id: string, to: Placement, brickIds?: readonly string[]): Result {
+    const preview = this.previewMoveStack(id, to, brickIds);
     if (!preview) return { ok: false, reason: 'not_found' };
     if (!preview.check.ok) return preview.check;
 

@@ -114,7 +114,7 @@ export class BuildView {
   }
 
   /** Shows translucent previews for all bricks in a carried stack. */
-  setGhostStack(items: Array<{ id: string; placement: Placement; color: string }>, valid: boolean) {
+  setGhostStack(items: Array<{ id: string; placement: Placement; color: string; valid?: boolean }>, valid: boolean) {
     const keep = new Set(items.map((item) => item.id));
     for (const [id, ghost] of this.stackGhosts) if (!keep.has(id)) ghost.obj.visible = false;
     for (const item of items) {
@@ -132,9 +132,10 @@ export class BuildView {
       }
       placeObject(ghost.obj, item.placement, this.model);
       ghost.obj.visible = true;
-      ghost.material.color.set(valid ? item.color : '#ff3b3b');
-      ghost.material.emissive.set(valid ? '#1d6b3a' : '#7a0000');
-      ghost.material.opacity = valid ? 0.6 : 0.45;
+      const itemValid = item.valid ?? valid;
+      ghost.material.color.set(itemValid ? item.color : '#ff3b3b');
+      ghost.material.emissive.set(itemValid ? '#1d6b3a' : '#7a0000');
+      ghost.material.opacity = itemValid ? 0.6 : 0.45;
     }
   }
 

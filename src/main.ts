@@ -270,6 +270,8 @@ function frame(now: number) {
 
   const settingUp = buildingSet();
   for (const ev of hand.events.splice(0)) {
+    // Each carried stack handles its own hand opening, closing, or disappearing.
+    if (interaction.hasHandBlockGrab) continue;
     // Right fist: while building a set it turns the set (before the first piece) or redoes; otherwise it empties the hand.
     if (ev === 'cancel' && settingUp && !setView.anchored) interaction.runAction('rotate');
     else if (ev === 'cancel' && settingUp) {
@@ -301,7 +303,8 @@ function frame(now: number) {
     cursorEl.style.display = handFrame.cursor ? 'block' : 'none';
     if (handFrame.cursor) {
       cursorEl.style.transform = `translate(${handFrame.cursor.x * innerWidth}px, ${handFrame.cursor.y * innerHeight}px)`;
-      cursorEl.classList.toggle('pressed', handFrame.pressed);
+      cursorEl.classList.toggle('pressed', handFrame.pressed &&
+        (!interaction.hasHandBlockGrab || interaction.isHandGrabbing(i)));
     }
   });
 

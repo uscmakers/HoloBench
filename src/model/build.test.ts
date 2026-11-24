@@ -233,3 +233,17 @@ describe('recoloring', () => {
     expect(m.getBrick(id)?.color).toBe(RED);
   });
 });
+
+describe('fixed carried stack membership', () => {
+  it('does not silently include a newly attached brick when committing a carried stack', () => {
+    const model = new BuildModel();
+    const lower = model.add(at('2x2', 0, 0, 0), RED);
+    if (!lower.ok) throw new Error('setup failed');
+    const carried = [lower.brick.id];
+    model.add(at('2x2', 0, 3, 0), RED);
+    const before = model.getBricks().map((b) => ({ ...b }));
+    expect(model.moveStack(lower.brick.id, at('2x2', 8, 0, 8), carried))
+      .toEqual({ ok: false, reason: 'would_disconnect' });
+    expect(model.getBricks().sort((a, b) => a.id.localeCompare(b.id))).toEqual(before);
+  });
+});
